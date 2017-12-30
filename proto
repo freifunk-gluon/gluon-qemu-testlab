@@ -1,0 +1,60 @@
+### 1. Improving the Gluon maintainer model?
+
+27.12.2017, 9 participants on site, circa 8 listeners remote via mumble
+
+The project is growing, more and more people are contributing, which is awesome! But how to cope with the extra work on the maintainer side? How can we best help Matthias? Is there a way to share the maintenance workload?
+
+#### Ideas to accelerate gluon development:
+
+- More maintainers/people that can merge:
+   - Neoraider is open to give people commit access to the repository
+   - He emphasizes that this is not **his** project, instead it's **our** project.
+   - If the code quality gets lower (in some borders), it's not that dramatically. More important is that the project continues in it's development.
+   - Bugs are toleratable, if they are not happening to often.
+   - Result: Also merge what's not perfect yet and improve later.
+- Submaintainer per subsystems:
+   - Similar to the linux kernel
+   - Contra: The project is a lot smaller than the linux kernel
+   - Consens to the contra point here. No need for submaintainers.
+- Early Merges:
+   - It would be desirable, to merge PRs faster as we do now.
+   - Packages/features could be marked as experimental.
+       - It would not be that problematic, if those packages are broken (even in a release).
+       - Maybe the build should fail, when `BROKEN=1` is not set and one tries to include experimental packages.
+   - Generally it's also not problematic if (non-experimental) packages are broken on the master branch
+       - They could be tested before the release is scheduled later.
+       - The release checklist should provide a feeling of a guarantee, that the merge is harmless and (potential) issues could be resolved later.
+       -
+- Use of "Help Wanted" flags
+- Problem of C-Code-Reviewer-Count:
+    - Neoraider is currently one of the 
+
+
+#### Ideas to make developing easier
+
+- Writing down guidelines:
+    - Guideline: "How to solve problems in the gluon way"
+    - Guideline: Review-Process
+    - Checklist before Release
+        - fo
+    - Detailed Documentation for the project (no resonance here)
+
+### 4. Not on agenda: Automated Tests
+
+- Pro:
+   - Problems in the build process are detected earlier
+   - Simple failure scenarios could be detected
+- Contra:
+   - Additional work
+   - Additional infrastructure needed (gluon project has no own infrastructure needs yet)
+- (possible) Levels of testing:
+   - Automated builds of the master branch
+   - Automated builds of PRs
+   - Automated testing of the built firmwares in defined test scenarios
+- Result of discussion:
+   - Automated tests have no priority for us yet, as we have no actual problem to solve.
+   - If somebody is interested in helping here: feel free.
+   - Some first ideas: **TODO: LINK**
+
+
+
