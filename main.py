@@ -2,37 +2,92 @@
 
 import os
 import sys
+import time
 import fcntl
 import select
+import shutil
 import termios
 import subprocess
 
-image = "gluon-ffh-1.0-20171228-x86-generic.img"
+image = "gluon-ffh-1.0-20171229-x86-generic.img"
 
-call = ['-nographic',
-        '-net', 'nic,addr=0x10',
-        '-net', 'user',
-        '-netdev', 'bridge,id=hn0',
-        '-device', 'e1000,addr=0x09,netdev=hn0,id=nic1',]
 
-mac = "52:54:00:12:34:%02x"
-listen = [
-    '-device', 'e1000,addr=0x11,netdev=mynet0,id=nic2,mac=' + (mac % 1),
-    '-netdev', 'socket,id=mynet0,listen=:1234']
-connect = [
-    '-device', 'e1000,addr=0x11,netdev=mynet0,id=nic2,mac=' + (mac % 2),
-    '-netdev', 'socket,id=mynet0,connect=:1234']
+def gen_qemu_call(image, identifier, ports):
 
-p = subprocess.Popen(['qemu-system-x86_64', image] + call + listen, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-p2 = subprocess.Popen(['qemu-system-x86_64', '2.img'] + call + connect, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+    shutil.copyfile('./' + image, './images/%02x.img' % identifier)
 
-fd = p.stdout.fileno()
-fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+    # todo machine identifier
+    host_id = 1
+    nat_mac = "52:54:%02x:%02x:34:%02x" % (host_id, identifier, 1)
+    client_mac = "52:54:%02x:%02x:34:%02x" % (host_id, identifier, 2)
+
+    mesh_ifaces = []
+    mesh_id = 1
+    for port, mode in ports.items():
+        if mode not in ['listen', 'connect']:
+            raise ValueError('Mode invalid: ' + str(mode))
+
+        # TODO: port > 1024
+
+        mesh_ifaces += [
+            '-device', ('e1000,addr=0x%02x,netdev=mynet%d,id=m_nic%d,mac=' + \
+                "52:54:%02x:%02x:34:%02x") % (10 + mesh_id, mesh_id, mesh_id, host_id, identifier, 10 + mesh_id),
+
+            '-netdev', 'socket,id=mynet%d,%s=:%d' % (mesh_id, mode, port)
+        ]
+
+        mesh_id += 1
+
+    call = ['-nographic',
+            '-netdev', 'user,id=hn1',
+            '-device', 'e1000,addr=0x05,netdev=hn1,id=nic1,mac=' + nat_mac,
+            '-netdev', 'tap,id=hn2,script=no,downscript=no',
+            '-device', 'e1000,addr=0x06,netdev=hn2,id=nic2,mac=' + client_mac]
+
+    process = subprocess.Popen(['qemu-system-x86_64', './images/%02x.img' % identifier] + call + mesh_ifaces, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+    return process
 
 def call(p, cmd):
     p.stdin.write(cmd.encode('utf-8') + b'\n')
     p.stdin.flush()
+
+def add_bat_link(p, dev):
+    call(p, 'ip link set ' + dev + ' up')
+    call(p, 'batctl if add ' + dev)
+
+p = gen_qemu_call(image, 1, {1234: 'listen'})
+time.sleep(5)
+p2 = gen_qemu_call(image, 2, {1234: 'connect', 1235: 'listen'})
+time.sleep(5)
+p3 = gen_qemu_call(image, 3, {1235: 'connect' })
+
+time.sleep(150)
+
+# activate shells
+call(p, '')
+call(p2, '')
+call(p3, '')
+
+
+add_bat_link(p, 'eth2')
+add_bat_link(p2, 'eth2')
+add_bat_link(p2, 'eth3')
+add_bat_link(p3, 'eth2')
+
+def add_hosts(p):
+    call(p, '''cat >> /etc/hosts <<EOF
+fdca:ffee:8::5054:1ff:fe01:3401 node1
+fdca:ffee:8::5054:1ff:fe02:3401 node2
+fdca:ffee:8::5054:1ff:fe03:3401 node3
+EOF''')
+
+add_hosts(p)
+add_hosts(p2)
+add_hosts(p3)
+
+fd = p.stdout.fileno()
+fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
 def read_all(p):
     res = b""
@@ -81,6 +136,8 @@ def repl2(q):
                 return repl2(p)
             elif special_mode and c == b'2':
                 return repl2(p2)
+            elif special_mode and c == b'3':
+                return repl2(p3)
             else:
                 special_mode = False
             q.stdin.write(c)
