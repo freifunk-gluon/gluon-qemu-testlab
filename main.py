@@ -40,9 +40,9 @@ def gen_qemu_call(image, identifier, ports):
 
     call = ['-nographic',
             '-netdev', 'user,id=hn1',
-            '-device', 'e1000,addr=0x05,netdev=hn1,id=nic1,mac=' + nat_mac,
+            '-device', 'e1000,addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
             '-netdev', 'tap,id=hn2,script=no,downscript=no',
-            '-device', 'e1000,addr=0x06,netdev=hn2,id=nic2,mac=' + client_mac]
+            '-device', 'e1000,addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
     process = subprocess.Popen(['qemu-system-x86_64', './images/%02x.img' % identifier] + call + mesh_ifaces, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
     return process
