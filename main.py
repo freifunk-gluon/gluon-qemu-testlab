@@ -51,9 +51,21 @@ def call(p, cmd):
     p.stdin.write(cmd.encode('utf-8') + b'\n')
     p.stdin.flush()
 
-def add_bat_link(p, dev):
-    call(p, 'ip link set ' + dev + ' up')
-    call(p, 'batctl if add ' + dev)
+def set_mesh_devs(p, devs):
+    #call(p, 'ip link set ' + dev + ' up')
+    #call(p, 'batctl if add ' + dev)
+    call(p, 'uci set network.mesh_lan.auto=1')
+    call(p, 'uci del_list network.mesh_lan.ifname=eth0')
+    for d in devs:
+        call(p, 'uci add_list network.mesh_lan.ifname=%s' % d)
+    call(p, 'uci commit network')
+    call(p, '/etc/init.d/network restart')
+
+    # deactivate offloading (maybe a bug)
+    call(p, 'ethtool --offload %s rx off  tx off')
+    call(p, 'ethtool -K %s gro off')
+    call(p, 'ethtool -K %s gso off')
+
 
 p = gen_qemu_call(image, 1, {1234: 'listen'})
 time.sleep(5)
@@ -68,11 +80,9 @@ call(p, '')
 call(p2, '')
 call(p3, '')
 
-
-add_bat_link(p, 'eth2')
-add_bat_link(p2, 'eth2')
-add_bat_link(p2, 'eth3')
-add_bat_link(p3, 'eth2')
+set_mesh_devs(p, ['eth2'])
+set_mesh_devs(p2, ['eth2', 'eth3'])
+set_mesh_devs(p3, ['eth2'])
 
 def add_hosts(p):
     call(p, '''cat >> /etc/hosts <<EOF
