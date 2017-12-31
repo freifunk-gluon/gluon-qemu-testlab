@@ -85,9 +85,6 @@ add_hosts(p)
 add_hosts(p2)
 add_hosts(p3)
 
-fd = p.stdout.fileno()
-fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
 def read_all(p):
     res = b""
