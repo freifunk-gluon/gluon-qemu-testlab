@@ -95,16 +95,6 @@ def read_all(p):
         res += p.stdout.read(1)
     return res
 
-def repl():
-    while True:
-        a = input()
-        if a == '##exit':
-            break
-        call(p, a.replace('\n',''))
-
-        for i in range(10):
-            print(p.stdout.readline().decode('utf-8'), end='')
-
 def enable_echo(enable):
     fd = sys.stdin.fileno()
     new = termios.tcgetattr(fd)
@@ -146,17 +136,6 @@ def repl2(q):
             sys.stdout.buffer.write(os.read(q.stdout.fileno(), 1))
             sys.stdout.buffer.flush()
             sys.stdout.flush()
-        #print('.', end='')
-        #sys.stdout.flush()
-
-READ_ONLY = select.POLLIN | select.POLLPRI | select.POLLHUP | select.POLLERR
-poller = select.poll()
-poller.register(p.stdout, READ_ONLY)
-
-# qemu-system-x86_64 ${tmpfile} \
-#     -nographic \
-#     -net nic,addr=0x10 -net user \
-#     -netdev bridge,id=hn0 -device e1000,addr=0x09,netdev=hn0,id=nic1
 
 
 # a1 = Node()
