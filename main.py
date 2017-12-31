@@ -76,9 +76,9 @@ add_bat_link(p3, 'eth2')
 
 def add_hosts(p):
     call(p, '''cat >> /etc/hosts <<EOF
-fdca:ffee:8::5054:1ff:fe01:3401 node1
-fdca:ffee:8::5054:1ff:fe02:3401 node2
-fdca:ffee:8::5054:1ff:fe03:3401 node3
+fdca:ffee:8::5054:1ff:fe01:3402 node1
+fdca:ffee:8::5054:1ff:fe02:3402 node2
+fdca:ffee:8::5054:1ff:fe03:3402 node3
 EOF''')
 
 add_hosts(p)
