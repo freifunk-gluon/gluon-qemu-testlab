@@ -95,6 +95,9 @@ add_hosts(p)
 add_hosts(p2)
 add_hosts(p3)
 
+call(p, 'pretty-hostname node1')
+call(p2, 'pretty-hostname node2')
+call(p3, 'pretty-hostname node3')
 
 def read_all(p):
     res = b""
