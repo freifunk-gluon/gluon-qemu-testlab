@@ -9,7 +9,7 @@ import shutil
 import termios
 import subprocess
 
-image = "gluon-ffh-1.0-20171229-x86-generic.img"
+image = "image.img"
 
 
 def gen_qemu_call(image, identifier, ports):
