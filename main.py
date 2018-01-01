@@ -58,13 +58,14 @@ def set_mesh_devs(p, devs):
     call(p, 'uci del_list network.mesh_lan.ifname=eth0')
     for d in devs:
         call(p, 'uci add_list network.mesh_lan.ifname=%s' % d)
+
+        # deactivate offloading (maybe a bug)
+        call(p, 'ethtool --offload %s rx off tx off' % d)
+        call(p, 'ethtool -K %s gro off' % d)
+        call(p, 'ethtool -K %s gso off' % d)
+
     call(p, 'uci commit network')
     call(p, '/etc/init.d/network restart')
-
-    # deactivate offloading (maybe a bug)
-    call(p, 'ethtool --offload %s rx off  tx off')
-    call(p, 'ethtool -K %s gro off')
-    call(p, 'ethtool -K %s gso off')
 
 
 p = gen_qemu_call(image, 1, {1234: 'listen'})
