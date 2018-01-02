@@ -7,6 +7,7 @@ import fcntl
 import select
 import shutil
 import termios
+import asyncio
 import subprocess
 
 image = "image.img"
@@ -23,6 +24,9 @@ def run(cmd):
 # TODO: cd to project folder
 if not os.path.exists(SSH_PUBKEY_FILE):
     run(f'ssh-keygen -t rsa -f {SSH_KEY_FILE} -N \'\'')
+
+stdout_buffers = {}
+processes = {}
 
 def gen_qemu_call(image, identifier, ports):
 
@@ -57,12 +61,13 @@ def gen_qemu_call(image, identifier, ports):
             '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s_client' % hostname,
             '-device', 'e1000,addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
-    process = subprocess.Popen(['qemu-system-x86_64', './images/%02x.img' % identifier] + call + mesh_ifaces, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-    return process
+    args = ['qemu-system-x86_64', './images/%02x.img' % identifier] + call + mesh_ifaces
+    process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+
+    processes[identifier] = yield from process
 
 def call(p, cmd):
     p.stdin.write(cmd.encode('utf-8') + b'\n')
-    p.stdin.flush()
 
 def set_mesh_devs(p, devs):
     #call(p, 'ip link set ' + dev + ' up')
@@ -110,23 +115,36 @@ def spawn_in_tmux(title, cmd):
     run(f'tmux -S test new-window -n {title} {cmd}')
 
 p = gen_qemu_call(image, 1, {1234: 'listen'})
-time.sleep(5)
-p2 = gen_qemu_call(image, 2, {1234: 'connect', 1235: 'listen'})
-time.sleep(5)
-p3 = gen_qemu_call(image, 3, {1235: 'connect' })
+#time.sleep(5)
+#p2 = gen_qemu_call(image, 2, {1234: 'connect', 1235: 'listen'})
+#time.sleep(5)
+#p3 = gen_qemu_call(image, 3, {1235: 'connect' })
 
-for i in range(15):
-    print(i*10)
-    time.sleep(10)
+@asyncio.coroutine
+def read_to_buffer(identifier, process):
+    while processes.get(identifier) is None:
+        yield from asyncio.sleep(0)
+    process = processes[identifier]
+    i = identifier
+    stdout_buffers[i] = b""
+    with open('logs/node1.log', 'wb') as f1:
+        while True:
+            b = yield from process.stdout.read(1) # TODO: is this unbuffered?
+            stdout_buffers[i] += b
+            f1.write(b)
+            if b == b'\n':
+                f1.flush()
 
-# activate shells
-call(p, '')
-call(p2, '')
-call(p3, '')
+@asyncio.coroutine
+def wait_for(identifier, b):
+    i = identifier
+    while stdout_buffers.get(identifier) is None:
+        yield from asyncio.sleep(0)
+    while True:
+        if b.encode('utf-8') in stdout_buffers[i]:
+            return
+        yield from asyncio.sleep(0)
 
-set_mesh_devs(p, ['eth2'])
-set_mesh_devs(p2, ['eth2', 'eth3'])
-set_mesh_devs(p3, ['eth2'])
 
 def add_hosts(p):
     call(p, '''cat >> /etc/hosts <<EOF
@@ -135,30 +153,70 @@ fdca:ffee:8::5054:1ff:fe02:3402 node2
 fdca:ffee:8::5054:1ff:fe03:3402 node3
 EOF''')
 
-add_hosts(p)
-add_hosts(p2)
-add_hosts(p3)
+@asyncio.coroutine
+def test():
+    yield from wait_for(1, 'Linux')
+    print('Linux')
+    yield from wait_for(1, 'Please press Enter to activate this console.')
+    print('console appeared')
+    yield from wait_for(1, 'reboot: Restarting system')
+    print('leaving config mode (reboot)')
+    # flush buffer
+    stdout_buffers[1] = b''.join(stdout_buffers[1].split(b'reboot: Restarting system')[1:])
+    yield from wait_for(1, 'Please press Enter to activate this console.')
+    print('console appeared (again)')
 
-call(p, 'pretty-hostname node1')
-call(p2, 'pretty-hostname node2')
-call(p3, 'pretty-hostname node3')
+    identifier = 1
 
-add_ssh_key(p)
-add_ssh_key(p2)
-add_ssh_key(p3)
+    p = processes[identifier]
 
+    # activate shell
+    call(p, '')
 
-def read_all(p):
-    res = b""
-    while select.select([p.stdout],[],[],0)[0] != []:
-        res += os.read(p.stdout.fileno(), 1)
-    return res
+    # TODO: error for ethtool not installed!
+    # TODO: ethtool description
+    # TODO: mehrere? variabel?
+    mesh_ifaces = ['eth2']
+    # wait for mesh ifaces
+    for i in mesh_ifaces:
+        print(f'wait for iface {i}')
+        yield from wait_for(1, 'Please press Enter to activate this console.')
+        print(f'iface {i} appeared')
 
-call(p, "echo -n 'sucessfully '; echo 'configured'")
-call(p2, "echo -n 'sucessfully '; echo 'configured'")
-call(p3, "echo -n 'sucessfully '; echo 'configured'")
+    # wait for netifd
+    # TODO: very hacky!
+    call(p, 'ubus wait_for network && (echo -n "ubus_network_"; echo "appeared")') # TODO: race?
+    print(f'wait for netifd ubus api')
+    yield from wait_for(1, 'ubus_network_appeared')
+    print(f'netifd appeared on ubus')
 
-print('waiting to configure')
+    set_mesh_devs(p, mesh_ifaces)
+
+    # TODO: variabel
+    add_hosts(p)
+
+    # TODO: variabel
+    call(p, 'pretty-hostname node1')
+
+    add_ssh_key(p)
+
+    print('waiting for configure')
+    call(p, "echo -n 'sucessfully_'; echo 'configured'") # TODO: race condition?
+
+    yield from wait_for(1, 'sucessfully_configured')
+    print('configured')
+
+    print('waiting for vx_mesh_lan to come up')
+    yield from wait_for(1, 'Interface activated: vx_mesh_lan')
+    print('vx_mesh_lan configured')
+
+loop = asyncio.get_event_loop()
+loop.create_task(test())
+loop.create_task(read_to_buffer(1, p))
+loop.create_task(p)
+
+loop.run_forever()
+
 
 with open('logs/node1.log', 'wb') as f1:
     with open('logs/node2.log', 'wb') as f2:
