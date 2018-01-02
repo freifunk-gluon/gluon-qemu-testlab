@@ -61,7 +61,8 @@ def gen_qemu_call(image, identifier, ports):
             '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s_client' % hostname,
             '-device', 'e1000,addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
-    args = ['qemu-system-x86_64', './images/%02x.img' % identifier] + call + mesh_ifaces
+    args = ['qemu-system-x86_64',
+            '-drive', 'format=raw,file=./images/%02x.img' % identifier] + call + mesh_ifaces
     process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
 
     processes[identifier] = yield from process
