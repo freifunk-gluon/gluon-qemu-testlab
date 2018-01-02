@@ -153,18 +153,26 @@ fdca:ffee:8::5054:1ff:fe02:3402 node2
 fdca:ffee:8::5054:1ff:fe03:3402 node3
 EOF''')
 
+def debug_print(since, hostname):
+    def printfn(message):
+        delta = time.time() - since
+        print(f'[{delta:>8.2f} | {hostname}] {message}')
+    return printfn
+
 @asyncio.coroutine
 def test():
+    dbg = debug_print(time.time(), 'node1')
+
     yield from wait_for(1, 'Linux')
-    print('Linux')
+    dbg('Linux')
     yield from wait_for(1, 'Please press Enter to activate this console.')
-    print('console appeared')
+    dbg('console appeared')
     yield from wait_for(1, 'reboot: Restarting system')
-    print('leaving config mode (reboot)')
+    dbg('leaving config mode (reboot)')
     # flush buffer
     stdout_buffers[1] = b''.join(stdout_buffers[1].split(b'reboot: Restarting system')[1:])
     yield from wait_for(1, 'Please press Enter to activate this console.')
-    print('console appeared (again)')
+    dbg('console appeared (again)')
 
     identifier = 1
 
@@ -179,16 +187,16 @@ def test():
     mesh_ifaces = ['eth2']
     # wait for mesh ifaces
     for i in mesh_ifaces:
-        print(f'wait for iface {i}')
+        dbg(f'wait for iface {i}')
         yield from wait_for(1, 'Please press Enter to activate this console.')
-        print(f'iface {i} appeared')
+        dbg(f'iface {i} appeared')
 
     # wait for netifd
     # TODO: very hacky!
     call(p, 'ubus wait_for network && (echo -n "ubus_network_"; echo "appeared")') # TODO: race?
-    print(f'wait for netifd ubus api')
+    dbg(f'wait for netifd ubus api')
     yield from wait_for(1, 'ubus_network_appeared')
-    print(f'netifd appeared on ubus')
+    dbg(f'netifd appeared on ubus')
 
     set_mesh_devs(p, mesh_ifaces)
 
@@ -200,15 +208,15 @@ def test():
 
     add_ssh_key(p)
 
-    print('waiting for configure')
+    dbg('waiting for configure')
     call(p, "echo -n 'sucessfully_'; echo 'configured'") # TODO: race condition?
 
     yield from wait_for(1, 'sucessfully_configured')
-    print('configured')
+    dbg('configured')
 
-    print('waiting for vx_mesh_lan to come up')
+    dbg('waiting for vx_mesh_lan to come up')
     yield from wait_for(1, 'Interface activated: vx_mesh_lan')
-    print('vx_mesh_lan configured')
+    dbg('vx_mesh_lan configured')
 
 loop = asyncio.get_event_loop()
 loop.create_task(test())
