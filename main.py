@@ -94,23 +94,35 @@ def add_ssh_key(p):
 {content}
 EOF''')
 
+@asyncio.coroutine
+def install_client(initial_time, nodename):
+    clientname = nodename.replace('node', 'client')
+    dbg = debug_print(initial_time, clientname)
 
-def install_clients(hostnames):
-    for hostname in hostnames:
-        ifname = "%s_client" % hostname
-        netns = "%s_client" % hostname
-        # TODO: delete them correctly
-        # Issue with mountpoints yet http://man7.org/linux/man-pages/man7/mount_namespaces.7.html
-        run(f'ip netns add {netns}')
-        run(f'sudo ip link set netns {netns} dev {ifname}')
-        run(f'ip netns exec {netns} ip link set {ifname} up')
-        shell = os.environ.get('SHELL') or '/bin/bash'
-        spawn_in_tmux(hostname.replace('node', 'client'), f'ip netns exec {netns} {shell}')
+    ifname = "%s_client" % nodename
 
-        ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
-                   '-o StrictHostKeyChecking=no ' + \
-                   f'-i {SSH_KEY_FILE} '
-        spawn_in_tmux(hostname, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@fdca:ffee:8::1; do sleep 1; done"')
+    dbg(f'waiting for iface {ifname} to appear')
+    create = asyncio.create_subprocess_exec("/bin/bash", '-c', f'while ! ip link show dev {ifname} &>/dev/null; do sleep 1; done;')
+    proc = yield from create
+
+    # Wait for the subprocess exit
+    yield from proc.wait()
+    dbg(f'iface {ifname} appeared')
+
+    netns = "%s_client" % nodename
+    # TODO: delete them correctly
+    # Issue with mountpoints yet http://man7.org/linux/man-pages/man7/mount_namespaces.7.html
+
+    run(f'ip netns add {netns}')
+    run(f'sudo ip link set netns {netns} dev {ifname}')
+    run(f'ip netns exec {netns} ip link set {ifname} up')
+    shell = os.environ.get('SHELL') or '/bin/bash'
+    spawn_in_tmux(clientname, f'ip netns exec {netns} {shell}')
+
+    ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
+               '-o StrictHostKeyChecking=no ' + \
+               f'-i {SSH_KEY_FILE} '
+    spawn_in_tmux(nodename, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@fdca:ffee:8::1; do sleep 1; done"')
 
 def spawn_in_tmux(title, cmd):
     run(f'tmux -S test new-window -n {title} {cmd}')
@@ -157,12 +169,12 @@ EOF''')
 def debug_print(since, hostname):
     def printfn(message):
         delta = time.time() - since
-        print(f'[{delta:>8.2f} | {hostname}] {message}')
+        print(f'[{delta:>8.2f} | {hostname:<9}] {message}')
     return printfn
 
 @asyncio.coroutine
-def test():
-    dbg = debug_print(time.time(), 'node1')
+def test(initial_time):
+    dbg = debug_print(initial_time, 'node1')
 
     yield from wait_for(1, 'Linux')
     dbg('Linux')
@@ -219,13 +231,15 @@ def test():
     yield from wait_for(1, 'Interface activated: vx_mesh_lan')
     dbg('vx_mesh_lan configured')
 
+initial_time = time.time()
+
 loop = asyncio.get_event_loop()
-loop.create_task(test())
+loop.create_task(install_client(initial_time, 'node1'))
+loop.create_task(test(initial_time))
 loop.create_task(read_to_buffer(1, p))
 loop.create_task(p)
 
 loop.run_forever()
-
 
 with open('logs/node1.log', 'wb') as f1:
     with open('logs/node2.log', 'wb') as f2:
@@ -250,9 +264,6 @@ with open('logs/node1.log', 'wb') as f1:
                     and b"sucessfully configured" in node2_log \
                     and b"sucessfully configured" in node3_log:
                     break
-
-install_clients(['node1', 'node2', 'node3'])
-
 
 def enable_echo(enable):
     fd = sys.stdin.fileno()
