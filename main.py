@@ -125,7 +125,7 @@ def install_client(initial_time, nodename):
     spawn_in_tmux(nodename, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@fdca:ffee:8::1; do sleep 1; done"')
 
 def spawn_in_tmux(title, cmd):
-    run(f'tmux -S test new-window -n {title} {cmd}')
+    run(f'tmux -S test new-window -d -n {title} {cmd}')
 
 p = gen_qemu_call(image, 1, {1234: 'listen'})
 #time.sleep(5)
