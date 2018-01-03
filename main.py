@@ -9,6 +9,7 @@ import shutil
 import termios
 import asyncio
 import subprocess
+from operator import itemgetter
 
 image = "image.img"
 
@@ -17,6 +18,35 @@ if os.environ.get('TMUX') is None:
 
 SSH_KEY_FILE = './ssh/id_rsa.key'
 SSH_PUBKEY_FILE = SSH_KEY_FILE + '.pub'
+
+class Node():
+
+    max_id = 0
+    max_port = 17321
+    all_nodes = []
+
+    def __init__(self):
+        Node.max_id += 1
+        Node.all_nodes += [self]
+        self.id = Node.max_id
+        self.hostname = f'node{self.id}'
+        self.mesh_links = []
+        self.if_index_max = 1
+
+    def add_mesh_link(self, peer, _is_peer=False, _port=None):
+        self.if_index_max += 1
+        ifname = f'eth{self.if_index_max}'
+        if _port is None:
+            Node.max_port += 1
+            port = Node.max_port
+            conn_type = 'listen'
+        else:
+            port = _port
+            conn_type = 'connect'
+        self.mesh_links.append((ifname, peer, conn_type, port))
+        if not _is_peer:
+            peer.add_mesh_link(self, _is_peer=True, _port=port)
+        return ifname
 
 def run(cmd):
     subprocess.run(cmd, shell=True)
@@ -28,44 +58,45 @@ if not os.path.exists(SSH_PUBKEY_FILE):
 stdout_buffers = {}
 processes = {}
 
-def gen_qemu_call(image, identifier, ports):
+def gen_qemu_call(image, node):
 
-    shutil.copyfile('./' + image, './images/%02x.img' % identifier)
+    shutil.copyfile('./' + image, './images/%02x.img' % node.id)
 
-    # todo machine identifier
+    # TODO: machine identifier
     host_id = 1
-    nat_mac = "52:54:%02x:%02x:34:%02x" % (host_id, identifier, 1)
-    client_mac = "52:54:%02x:%02x:34:%02x" % (host_id, identifier, 2)
-    hostname = 'node%d' % identifier
+    nat_mac = "52:54:%02x:%02x:34:%02x" % (host_id, node.id, 1)
+    client_mac = "52:54:%02x:%02x:34:%02x" % (host_id, node.id, 2)
 
     mesh_ifaces = []
     mesh_id = 1
-    for port, mode in ports.items():
-        if mode not in ['listen', 'connect']:
-            raise ValueError('Mode invalid: ' + str(mode))
+    for _, _, conn_type, port in node.mesh_links:
+        if conn_type not in ['listen', 'connect']:
+            raise ValueError('conn_type invalid: ' + str(conn_type))
 
-        # TODO: port > 1024
+        if conn_type == 'connect':
+            yield from wait_bash_cmd(f'while ! ss -tlp4n | grep ":{port}" &>/dev/null; do sleep 1; done;')
 
         mesh_ifaces += [
-            '-device', ('e1000,addr=0x%02x,netdev=mynet%d,id=m_nic%d,mac=' + \
-                "52:54:%02x:%02x:34:%02x") % (10 + mesh_id, mesh_id, mesh_id, host_id, identifier, 10 + mesh_id),
-
-            '-netdev', 'socket,id=mynet%d,%s=:%d' % (mesh_id, mode, port)
+            '-device', ('rtl8139,addr=0x%02x,netdev=mynet%d,id=m_nic%d,mac=' + \
+                "52:54:%02x:%02x:34:%02x") % (10 + mesh_id, mesh_id, mesh_id, host_id, node.id, 10 + mesh_id),
+            '-netdev', 'socket,id=mynet%d,%s=:%d' % (mesh_id, conn_type, port)
         ]
 
         mesh_id += 1
 
     call = ['-nographic',
+            '-enable-kvm',
             '-netdev', 'user,id=hn1',
-            '-device', 'e1000,addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
-            '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s_client' % hostname,
-            '-device', 'e1000,addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
+            '-device', 'rtl8139,addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
+            '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s_client' % node.hostname,
+            '-device', 'rtl8139,addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
-    args = ['qemu-system-x86_64',
-            '-drive', 'format=raw,file=./images/%02x.img' % identifier] + call + mesh_ifaces
+    # '-d', 'guest_errors', '-d', 'cpu_reset', '-gdb', 'tcp::' + str(3000 + node.id),
+    args = ['qemu-system-i386',
+            '-drive', 'format=raw,file=./images/%02x.img' % node.id] + call + mesh_ifaces
     process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
 
-    processes[identifier] = yield from process
+    processes[node.id] = yield from process
 
 def call(p, cmd):
     p.stdin.write(cmd.encode('utf-8') + b'\n')
@@ -95,21 +126,25 @@ def add_ssh_key(p):
 EOF''')
 
 @asyncio.coroutine
-def install_client(initial_time, nodename):
-    clientname = nodename.replace('node', 'client')
-    dbg = debug_print(initial_time, clientname)
-
-    ifname = "%s_client" % nodename
-
-    dbg(f'waiting for iface {ifname} to appear')
-    create = asyncio.create_subprocess_exec("/bin/bash", '-c', f'while ! ip link show dev {ifname} &>/dev/null; do sleep 1; done;')
+def wait_bash_cmd(cmd):
+    create = asyncio.create_subprocess_exec("/bin/bash", '-c', cmd)
     proc = yield from create
 
     # Wait for the subprocess exit
     yield from proc.wait()
+
+@asyncio.coroutine
+def install_client(initial_time, node):
+    clientname = f"client{node.id}"
+    dbg = debug_print(initial_time, clientname)
+
+    ifname = "%s_client" % node.hostname
+
+    dbg(f'waiting for iface {ifname} to appear')
+    yield from wait_bash_cmd(f'while ! ip link show dev {ifname} &>/dev/null; do sleep 1; done;')
     dbg(f'iface {ifname} appeared')
 
-    netns = "%s_client" % nodename
+    netns = "%s_client" % node.hostname
     # TODO: delete them correctly
     # Issue with mountpoints yet http://man7.org/linux/man-pages/man7/mount_namespaces.7.html
 
@@ -122,43 +157,36 @@ def install_client(initial_time, nodename):
     ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
                '-o StrictHostKeyChecking=no ' + \
                f'-i {SSH_KEY_FILE} '
-    spawn_in_tmux(nodename, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@fdca:ffee:8::1; do sleep 1; done"')
+    spawn_in_tmux(node.hostname, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@fdca:ffee:8::1; do sleep 1; done"')
 
 def spawn_in_tmux(title, cmd):
     run(f'tmux -S test new-window -d -n {title} {cmd}')
 
-p = gen_qemu_call(image, 1, {1234: 'listen'})
-#time.sleep(5)
-#p2 = gen_qemu_call(image, 2, {1234: 'connect', 1235: 'listen'})
-#time.sleep(5)
-#p3 = gen_qemu_call(image, 3, {1235: 'connect' })
-
 @asyncio.coroutine
-def read_to_buffer(identifier, process):
-    while processes.get(identifier) is None:
+def read_to_buffer(node):
+    while processes.get(node.id) is None:
         yield from asyncio.sleep(0)
-    process = processes[identifier]
-    i = identifier
-    stdout_buffers[i] = b""
-    with open('logs/node1.log', 'wb') as f1:
+    process = processes[node.id]
+    stdout_buffers[node.id] = b""
+    with open(f'logs/{node.hostname}.log', 'wb') as f1:
         while True:
             b = yield from process.stdout.read(1) # TODO: is this unbuffered?
-            stdout_buffers[i] += b
+            stdout_buffers[node.id] += b
             f1.write(b)
             if b == b'\n':
                 f1.flush()
 
 @asyncio.coroutine
-def wait_for(identifier, b):
-    i = identifier
-    while stdout_buffers.get(identifier) is None:
+def wait_for(node, b):
+    i = node.id
+    while stdout_buffers.get(i) is None:
         yield from asyncio.sleep(0)
     while True:
         if b.encode('utf-8') in stdout_buffers[i]:
             return
         yield from asyncio.sleep(0)
 
-
+# TODO: adjust
 def add_hosts(p):
     call(p, '''cat >> /etc/hosts <<EOF
 fdca:ffee:8::5054:1ff:fe01:3402 node1
@@ -173,23 +201,22 @@ def debug_print(since, hostname):
     return printfn
 
 @asyncio.coroutine
-def test(initial_time):
-    dbg = debug_print(initial_time, 'node1')
+def config_node(initial_time, node):
 
-    yield from wait_for(1, 'Linux')
+    dbg = debug_print(initial_time, node.hostname)
+
+    yield from wait_for(node, 'Linux')
     dbg('Linux')
-    yield from wait_for(1, 'Please press Enter to activate this console.')
+    yield from wait_for(node, 'Please press Enter to activate this console.')
     dbg('console appeared')
-    yield from wait_for(1, 'reboot: Restarting system')
+    yield from wait_for(node, 'reboot: Restarting system')
     dbg('leaving config mode (reboot)')
     # flush buffer
-    stdout_buffers[1] = b''.join(stdout_buffers[1].split(b'reboot: Restarting system')[1:])
-    yield from wait_for(1, 'Please press Enter to activate this console.')
+    stdout_buffers[node.id] = b''.join(stdout_buffers[node.id].split(b'reboot: Restarting system')[1:])
+    yield from wait_for(node, 'Please press Enter to activate this console.')
     dbg('console appeared (again)')
 
-    identifier = 1
-
-    p = processes[identifier]
+    p = processes[node.id]
 
     # activate shell
     call(p, '')
@@ -197,18 +224,18 @@ def test(initial_time):
     # TODO: error for ethtool not installed!
     # TODO: ethtool description
     # TODO: mehrere? variabel?
-    mesh_ifaces = ['eth2']
+    mesh_ifaces = list(map(itemgetter(0), node.mesh_links))
     # wait for mesh ifaces
     for i in mesh_ifaces:
         dbg(f'wait for iface {i}')
-        yield from wait_for(1, 'Please press Enter to activate this console.')
+        yield from wait_for(node, 'Please press Enter to activate this console.') # TODO: FIXME
         dbg(f'iface {i} appeared')
 
     # wait for netifd
     # TODO: very hacky!
     call(p, 'ubus wait_for network && (echo -n "ubus_network_"; echo "appeared")') # TODO: race?
     dbg(f'wait for netifd ubus api')
-    yield from wait_for(1, 'ubus_network_appeared')
+    yield from wait_for(node, 'ubus_network_appeared')
     dbg(f'netifd appeared on ubus')
 
     set_mesh_devs(p, mesh_ifaces)
@@ -216,54 +243,38 @@ def test(initial_time):
     # TODO: variabel
     add_hosts(p)
 
-    # TODO: variabel
-    call(p, 'pretty-hostname node1')
+    call(p, f'pretty-hostname {node.hostname}')
 
     add_ssh_key(p)
 
     dbg('waiting for configure')
     call(p, "echo -n 'sucessfully_'; echo 'configured'") # TODO: race condition?
 
-    yield from wait_for(1, 'sucessfully_configured')
+    yield from wait_for(node, 'sucessfully_configured')
     dbg('configured')
 
     dbg('waiting for vx_mesh_lan to come up')
-    yield from wait_for(1, 'Interface activated: vx_mesh_lan')
+    yield from wait_for(node, 'Interface activated: vx_mesh_lan')
     dbg('vx_mesh_lan configured')
 
 initial_time = time.time()
 
-loop = asyncio.get_event_loop()
-loop.create_task(install_client(initial_time, 'node1'))
-loop.create_task(test(initial_time))
-loop.create_task(read_to_buffer(1, p))
-loop.create_task(p)
+a = Node()
+for i in range(10):
+    b = Node()
+    a.add_mesh_link(b)
+    a = b
 
-loop.run_forever()
+def run_all():
+    loop = asyncio.get_event_loop()
 
-with open('logs/node1.log', 'wb') as f1:
-    with open('logs/node2.log', 'wb') as f2:
-        with open('logs/node3.log', 'wb') as f3:
-            node1_log = b""
-            node2_log = b""
-            node3_log = b""
-            while True:
-                c1 = read_all(p)
-                f1.write(c1)
-                node1_log += c1
+    for node in Node.all_nodes:
+        loop.create_task(gen_qemu_call(image, node))
+        loop.create_task(read_to_buffer(node))
+        loop.create_task(config_node(initial_time, node))
+        loop.create_task(install_client(initial_time, node))
 
-                c2 = read_all(p2)
-                f2.write(c2)
-                node2_log += c2
-
-                c3 = read_all(p3)
-                f3.write(c3)
-                node3_log += c3
-
-                if b"sucessfully configured" in node1_log \
-                    and b"sucessfully configured" in node2_log \
-                    and b"sucessfully configured" in node3_log:
-                    break
+    loop.run_forever()
 
 def enable_echo(enable):
     fd = sys.stdin.fileno()
