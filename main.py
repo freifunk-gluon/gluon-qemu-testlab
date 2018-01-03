@@ -102,12 +102,11 @@ def call(p, cmd):
     p.stdin.write(cmd.encode('utf-8') + b'\n')
 
 def set_mesh_devs(p, devs):
-    #call(p, 'ip link set ' + dev + ' up')
-    #call(p, 'batctl if add ' + dev)
-    call(p, 'uci set network.mesh_lan.auto=1')
-    call(p, 'uci del_list network.mesh_lan.ifname=eth0')
     for d in devs:
-        call(p, 'uci add_list network.mesh_lan.ifname=%s' % d)
+        call(p, f"uci set network.{d}_mesh=interface")
+        call(p, f"uci set network.{d}_mesh.auto=1")
+        call(p, f"uci set network.{d}_mesh.proto=gluon_wired")
+        call(p, f"uci set network.{d}_mesh.ifname={d}")
 
         # deactivate offloading (maybe a bug)
         call(p, 'ethtool --offload %s rx off tx off' % d)
