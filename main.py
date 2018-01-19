@@ -257,14 +257,6 @@ def config_node(initial_time, node):
     yield from wait_for(node, 'Interface activated: vx_mesh_lan')
     dbg('vx_mesh_lan configured')
 
-initial_time = time.time()
-
-a = Node()
-for i in range(10):
-    b = Node()
-    a.add_mesh_link(b)
-    a = b
-
 def run_all():
     loop = asyncio.get_event_loop()
 
@@ -317,6 +309,16 @@ def repl2(q):
             sys.stdout.buffer.flush()
             sys.stdout.flush()
 
+
+initial_time = time.time()
+
+a = Node()
+for i in range(10):
+    b = Node()
+    a.add_mesh_link(b)
+    a = b
+
+run_all()
 
 # a1 = Node()
 # a2 = Node()
