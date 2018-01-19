@@ -93,7 +93,7 @@ def gen_qemu_call(image, node):
             '-device', 'rtl8139,addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
     # '-d', 'guest_errors', '-d', 'cpu_reset', '-gdb', 'tcp::' + str(3000 + node.id),
-    args = ['qemu-system-i386',
+    args = ['qemu-system-x86_64',
             '-drive', 'format=raw,file=./images/%02x.img' % node.id] + call + mesh_ifaces
     process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
 
