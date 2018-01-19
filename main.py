@@ -18,6 +18,7 @@ if os.environ.get('TMUX') is None:
 
 SSH_KEY_FILE = './ssh/id_rsa.key'
 SSH_PUBKEY_FILE = SSH_KEY_FILE + '.pub'
+NEXT_NODE_ADDR = 'fdca:ffee:8::1'
 
 class Node():
 
@@ -156,7 +157,7 @@ def install_client(initial_time, node):
     ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
                '-o StrictHostKeyChecking=no ' + \
                f'-i {SSH_KEY_FILE} '
-    spawn_in_tmux(node.hostname, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@fdca:ffee:8::1; do sleep 1; done"')
+    spawn_in_tmux(node.hostname, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@{NEXT_NODE_ADDR}; do sleep 1; done"')
 
 def spawn_in_tmux(title, cmd):
     run(f'tmux -S test new-window -d -n {title} {cmd}')
