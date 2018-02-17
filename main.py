@@ -163,6 +163,7 @@ async def install_client(initial_time, node):
     # TODO: delete them correctly
     # Issue with mountpoints yet http://man7.org/linux/man-pages/man7/mount_namespaces.7.html
     run(f'ip netns add {netns}')
+    gen_etc_hosts_for_netns(netns)
 
     # wait for ssh TODO: hacky
     await asyncio.sleep(10)
@@ -256,6 +257,18 @@ async def config_node(initial_time, node, ssh_conn):
     #ssh_call(p, 'uci set fastd.mesh_vpn.enabled=0')
     #ssh_call(p, 'uci commit fastd')
     #ssh_call(p, '/etc/init.d/fastd stop mesh_vpn')
+
+def gen_etc_hosts_for_netns(netns):
+    # use /etc/hosts and extend it
+    with open('/etc/hosts') as h:
+        if not os.path.exists('/etc/netns/'):
+            os.mkdir('/etc/netns')
+        if not os.path.exists(f'/etc/netns/{netns}/'):
+            os.mkdir(f'/etc/netns/{netns}')
+        with open(f'/etc/netns/{netns}/hosts', 'w') as f:
+            f.write(h.read())
+            f.write('\n')
+            f.write(host_entries)
 
 host_entries = ""
 
