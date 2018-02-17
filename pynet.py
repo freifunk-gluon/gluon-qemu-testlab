@@ -156,7 +156,7 @@ async def install_client(initial_time, node):
     gen_etc_hosts_for_netns(netns)
 
     # wait for ssh TODO: hacky
-    await asyncio.sleep(10)
+    await wait_bash_cmd(f'while ! nc {lladdr}%{ifname} 22 -w 1 > /dev/null; do sleep 1; done;')
 
     # node setup setup needs to be done here
     async with asyncssh.connect(f'{lladdr}%{ifname}', username='root', known_hosts=None) as conn:
