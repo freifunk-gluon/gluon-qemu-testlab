@@ -35,8 +35,8 @@ pip install -r requirements.txt
 ## Quickstart
 
 ``` shell
-sh update_image.sh                         # download an image
-sudo python36 screnarios/chain_4_nodes.py  # start a scenario
+sh update_image.sh                        # download an image
+sudo python36 scenarios/chain_4_nodes.py  # start a scenario
 ```
 
 ## Example scenario
