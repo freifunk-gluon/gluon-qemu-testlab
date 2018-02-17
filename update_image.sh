@@ -1,7 +1,6 @@
 #!/bin/sh
 
-URL="http://130.75.178.7:8000/images/factory/"
-
+URL="https://build.ffh.zone/job/gluon-nightly/ws/download/images/factory/"
 
 filename=$(curl -s ${URL} | grep 'gluon.*x86-generic.img.gz' | sed 's_^.*\(gluon.*x86-generic.img.gz\).*$_\1_g')
 
