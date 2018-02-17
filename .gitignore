@@ -1,5 +1,5 @@
 image*.img
-images/
+images/*.img
 ssh/*.key
 ssh/*.key.pub
 logs/*.log
