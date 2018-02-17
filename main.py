@@ -117,10 +117,6 @@ async def set_mesh_devs(p, devs):
         await ssh_call(p, f"uci set network.{d}_mesh.proto=gluon_wired")
         await ssh_call(p, f"uci set network.{d}_mesh.ifname={d}")
 
-        # deactivate offloading (maybe a bug)
-        await ssh_call(p, 'ethtool --offload %s rx off tx off' % d)
-        await ssh_call(p, 'ethtool -K %s gro off' % d)
-        await ssh_call(p, 'ethtool -K %s gso off' % d)
 
     await ssh_call(p, 'uci commit network')
     await ssh_call(p, 'ubus call network reload')
