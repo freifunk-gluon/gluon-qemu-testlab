@@ -125,9 +125,7 @@ async def add_ssh_key(p):
     # TODO: this removes baked in ssh keys :/
     with open(SSH_PUBKEY_FILE) as f:
         content = f.read()
-        await ssh_call(p, f'''cat >> /etc/dropbear/authorized_keys <<EOF
-{content}
-EOF''')
+        await ssh_call(p, f'cat >> /etc/dropbear/authorized_keys <<EOF\n{content}')
 
 @asyncio.coroutine
 def wait_bash_cmd(cmd):
