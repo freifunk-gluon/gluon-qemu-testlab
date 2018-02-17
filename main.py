@@ -217,7 +217,7 @@ def wait_for(node, b):
 
 # TODO: adjust
 async def add_hosts(p):
-    await ssh_call(p, f'cat >> /etc/hosts <<EOF\n{host_entries}\nEOF')
+    await ssh_call(p, f'cat >> /etc/hosts <<EOF\n{host_entries}\n')
 
 def debug_print(since, hostname):
     def printfn(message):
