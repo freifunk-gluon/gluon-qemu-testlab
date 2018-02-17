@@ -218,6 +218,7 @@ def wait_for(node, b):
 # TODO: adjust
 async def add_hosts(p):
     await ssh_call(p, f'cat >> /etc/hosts <<EOF\n{host_entries}\n')
+    await ssh_call(p, f'cat >> /etc/bat-hosts <<EOF\n{bathost_entries}\n')
 
 def debug_print(since, hostname):
     def printfn(message):
@@ -271,17 +272,20 @@ def gen_etc_hosts_for_netns(netns):
             f.write(host_entries)
 
 host_entries = ""
+bathost_entries = ""
 
 def run_all():
     loop = asyncio.get_event_loop()
 
     host_id = 1
     global host_entries
+    global bathost_entries
 
     for node in Node.all_nodes:
         host_entries += f"{SITE_LOCAL_PREFIX}:5054:{host_id}ff:fe{node.id:02x}:3402 {node.hostname}\n"
         client_name = node.hostname.replace('node', 'client')
         host_entries += f"{SITE_LOCAL_PREFIX}:a854:{host_id}ff:fe{node.id:02x}:3402 {client_name}\n"
+        bathost_entries += f"52:54:{host_id:02x}:{node.id:02x}:34:02 {node.hostname}\n"
 
     for node in Node.all_nodes:
         loop.create_task(gen_qemu_call(image, node))
