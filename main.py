@@ -8,12 +8,13 @@ import select
 import shutil
 import termios
 import asyncio
+import asyncssh
 import subprocess
 from operator import itemgetter
 
 image = "image.img"
 
-if os.environ.get('TMUX') is None:
+if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
     os.execl('/usr/bin/tmux', 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
 
 SSH_KEY_FILE = './ssh/id_rsa.key'
@@ -99,29 +100,30 @@ def gen_qemu_call(image, node):
 
     processes[node.id] = yield from process
 
-def call(p, cmd):
-    p.stdin.write(cmd.encode('utf-8') + b'\n')
+async def ssh_call(p, cmd):
+    res = await p.run(cmd)
+    return res.stdout
 
-def set_mesh_devs(p, devs):
+async def set_mesh_devs(p, devs):
     for d in devs:
-        call(p, f"uci set network.{d}_mesh=interface")
-        call(p, f"uci set network.{d}_mesh.auto=1")
-        call(p, f"uci set network.{d}_mesh.proto=gluon_wired")
-        call(p, f"uci set network.{d}_mesh.ifname={d}")
+        await ssh_call(p, f"uci set network.{d}_mesh=interface")
+        await ssh_call(p, f"uci set network.{d}_mesh.auto=1")
+        await ssh_call(p, f"uci set network.{d}_mesh.proto=gluon_wired")
+        await ssh_call(p, f"uci set network.{d}_mesh.ifname={d}")
 
         # deactivate offloading (maybe a bug)
-        call(p, 'ethtool --offload %s rx off tx off' % d)
-        call(p, 'ethtool -K %s gro off' % d)
-        call(p, 'ethtool -K %s gso off' % d)
+        await ssh_call(p, 'ethtool --offload %s rx off tx off' % d)
+        await ssh_call(p, 'ethtool -K %s gro off' % d)
+        await ssh_call(p, 'ethtool -K %s gso off' % d)
 
-    call(p, 'uci commit network')
-    call(p, 'ubus call network reload')
+    await ssh_call(p, 'uci commit network')
+    await ssh_call(p, 'ubus call network reload')
 
-def add_ssh_key(p):
+async def add_ssh_key(p):
     # TODO: this removes baked in ssh keys :/
     with open(SSH_PUBKEY_FILE) as f:
         content = f.read()
-        call(p, f'''cat >> /etc/dropbear/authorized_keys <<EOF
+        await ssh_call(p, f'''cat >> /etc/dropbear/authorized_keys <<EOF
 {content}
 EOF''')
 
@@ -133,27 +135,46 @@ def wait_bash_cmd(cmd):
     # Wait for the subprocess exit
     yield from proc.wait()
 
-@asyncio.coroutine
-def install_client(initial_time, node):
+async def install_client(initial_time, node):
     clientname = f"client{node.id}"
     dbg = debug_print(initial_time, clientname)
 
     ifname = "%s_client" % node.hostname
 
+    # client link local addr
+    host_id = 1
+    lladdr = "fe80::5054:%02xff:fe%02x:34%02x" % (host_id, node.id, 2)
+
     dbg(f'waiting for iface {ifname} to appear')
-    yield from wait_bash_cmd(f'while ! ip link show dev {ifname} &>/dev/null; do sleep 1; done;')
+    await wait_bash_cmd(f'while ! ip link show dev {ifname} &>/dev/null; do sleep 1; done;')
+    run(f'ip link set {ifname} up')
+    await wait_bash_cmd(f'while ! ping -c 1 {lladdr}%{ifname} &>/dev/null; do sleep 1; done;')
     dbg(f'iface {ifname} appeared')
 
+    # create netns
     netns = "%s_client" % node.hostname
     # TODO: delete them correctly
     # Issue with mountpoints yet http://man7.org/linux/man-pages/man7/mount_namespaces.7.html
-
     run(f'ip netns add {netns}')
-    run(f'sudo ip link set netns {netns} dev {ifname}')
+
+    # wait for ssh TODO: hacky
+    await asyncio.sleep(10)
+
+    # node setup setup needs to be done here
+    async with asyncssh.connect(f'{lladdr}%{ifname}', username='root', known_hosts=None) as conn:
+        await config_node(initial_time, node, conn)
+    dbg(f'{node.hostname} configured')
+
+    # move iface to netns
+    dbg(f'moving {ifname} to netns {netns}')
+    run(f'ip link set netns {netns} dev {ifname}')
     run(f'ip netns exec {netns} ip link set {ifname} up')
+
+    # spawn client shell
     shell = os.environ.get('SHELL') or '/bin/bash'
     spawn_in_tmux(clientname, f'ip netns exec {netns} {shell}')
 
+    # spawn ssh shell
     ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
                '-o StrictHostKeyChecking=no ' + \
                f'-i {SSH_KEY_FILE} '
@@ -187,8 +208,8 @@ def wait_for(node, b):
         yield from asyncio.sleep(0)
 
 # TODO: adjust
-def add_hosts(p):
-    call(p, '''cat >> /etc/hosts <<EOF
+async def add_hosts(p):
+    await ssh_call(p, '''cat >> /etc/hosts <<EOF
 fdca:ffee:8::5054:1ff:fe01:3402 node1
 fdca:ffee:8::5054:1ff:fe02:3402 node2
 fdca:ffee:8::5054:1ff:fe03:3402 node3
@@ -200,62 +221,38 @@ def debug_print(since, hostname):
         print(f'[{delta:>8.2f} | {hostname:<9}] {message}')
     return printfn
 
-@asyncio.coroutine
-def config_node(initial_time, node):
+async def config_node(initial_time, node, ssh_conn):
 
     dbg = debug_print(initial_time, node.hostname)
 
-    yield from wait_for(node, 'Linux')
-    dbg('Linux')
-    yield from wait_for(node, 'Please press Enter to activate this console.')
-    dbg('console appeared')
-    yield from wait_for(node, 'reboot: Restarting system')
+    p = ssh_conn
+
+    # TODO: optional
+    #ssh_call(p, 'for f in $(find /lib/gluon/upgrade -type f); do ${f}; done')
+    await ssh_call(p, 'uci set gluon-setup-mode.@setup_mode[0].configured=\'1\'')
+    await ssh_call(p, 'uci commit gluon-setup-mode')
+
+    mesh_ifaces = list(map(itemgetter(0), node.mesh_links))
+    await set_mesh_devs(p, mesh_ifaces)
+
+    # TODO: variabel
+    await add_hosts(p)
+    await ssh_call(p, f'pretty-hostname {node.hostname}')
+    await add_ssh_key(p)
+    await ssh_call(p, f'reboot')
+
+    #yield from asyncio.sleep(3600)
+
+    await wait_for(node, 'reboot: Restarting system')
     dbg('leaving config mode (reboot)')
     # flush buffer
     stdout_buffers[node.id] = b''.join(stdout_buffers[node.id].split(b'reboot: Restarting system')[1:])
-    yield from wait_for(node, 'Please press Enter to activate this console.')
+    await wait_for(node, 'Please press Enter to activate this console.')
     dbg('console appeared (again)')
 
-    p = processes[node.id]
-
-    # activate shell
-    call(p, '')
-
-    # TODO: error for ethtool not installed!
-    # TODO: ethtool description
-    # TODO: mehrere? variabel?
-    mesh_ifaces = list(map(itemgetter(0), node.mesh_links))
-    # wait for mesh ifaces
-    for i in mesh_ifaces:
-        dbg(f'wait for iface {i}')
-        yield from wait_for(node, 'Please press Enter to activate this console.') # TODO: FIXME
-        dbg(f'iface {i} appeared')
-
-    # wait for netifd
-    # TODO: very hacky!
-    call(p, 'ubus wait_for network && (echo -n "ubus_network_"; echo "appeared")') # TODO: race?
-    dbg(f'wait for netifd ubus api')
-    yield from wait_for(node, 'ubus_network_appeared')
-    dbg(f'netifd appeared on ubus')
-
-    set_mesh_devs(p, mesh_ifaces)
-
-    # TODO: variabel
-    add_hosts(p)
-
-    call(p, f'pretty-hostname {node.hostname}')
-
-    add_ssh_key(p)
-
-    dbg('waiting for configure')
-    call(p, "echo -n 'sucessfully_'; echo 'configured'") # TODO: race condition?
-
-    yield from wait_for(node, 'sucessfully_configured')
-    dbg('configured')
-
-    dbg('waiting for vx_mesh_lan to come up')
-    yield from wait_for(node, 'Interface activated: vx_mesh_lan')
-    dbg('vx_mesh_lan configured')
+    #ssh_call(p, 'uci set fastd.mesh_vpn.enabled=0')
+    #ssh_call(p, 'uci commit fastd')
+    #ssh_call(p, '/etc/init.d/fastd stop mesh_vpn')
 
 def run_all():
     loop = asyncio.get_event_loop()
@@ -263,7 +260,6 @@ def run_all():
     for node in Node.all_nodes:
         loop.create_task(gen_qemu_call(image, node))
         loop.create_task(read_to_buffer(node))
-        loop.create_task(config_node(initial_time, node))
         loop.create_task(install_client(initial_time, node))
 
     loop.run_forever()
