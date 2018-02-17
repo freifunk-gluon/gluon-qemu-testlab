@@ -3,10 +3,7 @@
 import os
 import sys
 import time
-import fcntl
-import select
 import shutil
-import termios
 import asyncio
 import asyncssh
 import subprocess
@@ -267,47 +264,6 @@ def run_all():
         loop.create_task(install_client(initial_time, node))
 
     loop.run_forever()
-
-def enable_echo(enable):
-    fd = sys.stdin.fileno()
-    new = termios.tcgetattr(fd)
-    if enable:
-        new[3] |= termios.ECHO
-        new[3] |= termios.ICANON
-        new[3] |= termios.ISIG
-    else:
-        new[3] &= ~termios.ECHO # no echo
-        new[3] &= ~termios.ICANON # Input is delivered bytewise instead of linewise
-        new[3] &= ~termios.ISIG # Disable Signals on CTRL + C
-    termios.tcsetattr(fd, termios.TCSANOW, new)
-
-
-def repl2(q):
-    enable_echo(False)
-    special_mode = False
-    while True:
-        s = select.select([sys.stdin, q.stdout], [], [], 0.1)
-        if sys.stdin in s[0]:
-            c = os.read(sys.stdin.fileno(), 1)
-            if c == b'\2':
-                special_mode = True
-            elif special_mode and c == b'c':
-                enable_echo(True)
-                return
-            elif special_mode and c == b'1':
-                return repl2(p)
-            elif special_mode and c == b'2':
-                return repl2(p2)
-            elif special_mode and c == b'3':
-                return repl2(p3)
-            else:
-                special_mode = False
-            q.stdin.write(c)
-            q.stdin.flush()
-        if q.stdout in s[0]:
-            sys.stdout.buffer.write(os.read(q.stdout.fileno(), 1))
-            sys.stdout.buffer.flush()
-            sys.stdout.flush()
 
 
 initial_time = time.time()
