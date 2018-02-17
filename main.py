@@ -17,6 +17,7 @@ if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
 SSH_KEY_FILE = './ssh/id_rsa.key'
 SSH_PUBKEY_FILE = SSH_KEY_FILE + '.pub'
 NEXT_NODE_ADDR = 'fdca:ffee:8::1'
+SITE_LOCAL_PREFIX = 'fdca:ffee:8:0'
 
 class Node():
 
@@ -142,12 +143,17 @@ async def install_client(initial_time, node):
 
     ifname = "%s_client" % node.hostname
 
-    # client link local addr
+    # client iface link local addr
     host_id = 1
     lladdr = "fe80::5054:%02xff:fe%02x:34%02x" % (host_id, node.id, 2)
 
     dbg(f'waiting for iface {ifname} to appear')
     await wait_bash_cmd(f'while ! ip link show dev {ifname} &>/dev/null; do sleep 1; done;')
+
+    # set mac of client tap iface on host system
+    client_iface_mac = "aa:54:%02x:%02x:34:%02x" % (host_id, node.id, 2)
+    run(f'ip link set {ifname} address {client_iface_mac}')
+
     run(f'ip link set {ifname} up')
     await wait_bash_cmd(f'while ! ping -c 1 {lladdr}%{ifname} &>/dev/null; do sleep 1; done;')
     dbg(f'iface {ifname} appeared')
@@ -210,11 +216,7 @@ def wait_for(node, b):
 
 # TODO: adjust
 async def add_hosts(p):
-    await ssh_call(p, '''cat >> /etc/hosts <<EOF
-fdca:ffee:8::5054:1ff:fe01:3402 node1
-fdca:ffee:8::5054:1ff:fe02:3402 node2
-fdca:ffee:8::5054:1ff:fe03:3402 node3
-EOF''')
+    await ssh_call(p, f'cat >> /etc/hosts <<EOF\n{host_entries}\nEOF')
 
 def debug_print(since, hostname):
     def printfn(message):
@@ -255,8 +257,18 @@ async def config_node(initial_time, node, ssh_conn):
     #ssh_call(p, 'uci commit fastd')
     #ssh_call(p, '/etc/init.d/fastd stop mesh_vpn')
 
+host_entries = ""
+
 def run_all():
     loop = asyncio.get_event_loop()
+
+    host_id = 1
+    global host_entries
+
+    for node in Node.all_nodes:
+        host_entries += f"{SITE_LOCAL_PREFIX}:5054:{host_id}ff:fe{node.id:02x}:3402 {node.hostname}\n"
+        client_name = node.hostname.replace('node', 'client')
+        host_entries += f"{SITE_LOCAL_PREFIX}:a854:{host_id}ff:fe{node.id:02x}:3402 {client_name}\n"
 
     for node in Node.all_nodes:
         loop.create_task(gen_qemu_call(image, node))
