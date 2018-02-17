@@ -1,5 +1,6 @@
-image.img
+image*.img
 images/
 ssh/*.key
 ssh/*.key.pub
 logs/*.log
+__pycache__
