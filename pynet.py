@@ -10,10 +10,6 @@ import subprocess
 from operator import itemgetter
 
 image = "image.img"
-
-if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
-    os.execl('/usr/bin/tmux', 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
-
 SSH_KEY_FILE = './ssh/id_rsa.key'
 SSH_PUBKEY_FILE = SSH_KEY_FILE + '.pub'
 NEXT_NODE_ADDR = 'fdca:ffee:8::1'
@@ -50,10 +46,6 @@ class Node():
 
 def run(cmd):
     subprocess.run(cmd, shell=True)
-
-# TODO: cd to project folder
-if not os.path.exists(SSH_PUBKEY_FILE):
-    run(f'ssh-keygen -t rsa -f {SSH_KEY_FILE} -N \'\'')
 
 stdout_buffers = {}
 processes = {}
@@ -268,6 +260,14 @@ host_entries = ""
 bathost_entries = ""
 
 def run_all():
+
+    if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
+        os.execl('/usr/bin/tmux', 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
+
+    # TODO: cd to project folder
+    if not os.path.exists(SSH_PUBKEY_FILE):
+        run(f'ssh-keygen -t rsa -f {SSH_KEY_FILE} -N \'\'')
+
     loop = asyncio.get_event_loop()
 
     host_id = 1
@@ -287,19 +287,7 @@ def run_all():
 
     loop.run_forever()
 
+def connect(a, b):
+    a.add_mesh_link(b)
 
 initial_time = time.time()
-
-a = Node()
-for i in range(10):
-    b = Node()
-    a.add_mesh_link(b)
-    a = b
-
-run_all()
-
-# a1 = Node()
-# a2 = Node()
-# a3 = Node()
-#
-# connect(a1, a2)
