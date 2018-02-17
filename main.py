@@ -96,7 +96,13 @@ def gen_qemu_call(image, node):
     # '-d', 'guest_errors', '-d', 'cpu_reset', '-gdb', 'tcp::' + str(3000 + node.id),
     args = ['qemu-system-x86_64',
             '-drive', 'format=raw,file=./images/%02x.img' % node.id] + call + mesh_ifaces
-    process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+
+    fifo_path = './fifos/%02x' % node.id
+    if os.path.exists(fifo_path):
+        os.remove(fifo_path)
+    os.mkfifo(fifo_path)
+    stdin = os.open(fifo_path, os.O_NONBLOCK | os.O_RDONLY)
+    process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=stdin)
 
     processes[node.id] = yield from process
 
