@@ -215,7 +215,6 @@ def wait_for(node, b):
             return
         yield from asyncio.sleep(0)
 
-# TODO: adjust
 async def add_hosts(p):
     await ssh_call(p, f'cat >> /etc/hosts <<EOF\n{host_entries}\n')
     await ssh_call(p, f'cat >> /etc/bat-hosts <<EOF\n{bathost_entries}\n')
@@ -232,21 +231,17 @@ async def config_node(initial_time, node, ssh_conn):
 
     p = ssh_conn
 
-    # TODO: optional
-    #ssh_call(p, 'for f in $(find /lib/gluon/upgrade -type f); do ${f}; done')
-    await ssh_call(p, 'uci set gluon-setup-mode.@setup_mode[0].configured=\'1\'')
-    await ssh_call(p, 'uci commit gluon-setup-mode')
-
     mesh_ifaces = list(map(itemgetter(0), node.mesh_links))
-    await set_mesh_devs(p, mesh_ifaces)
 
-    # TODO: variabel
+    await set_mesh_devs(p, mesh_ifaces)
     await add_hosts(p)
     await ssh_call(p, f'pretty-hostname {node.hostname}')
     await add_ssh_key(p)
-    await ssh_call(p, f'reboot')
 
-    #yield from asyncio.sleep(3600)
+    # reboot to operational mode
+    await ssh_call(p, 'uci set gluon-setup-mode.@setup_mode[0].configured=\'1\'')
+    await ssh_call(p, 'uci commit gluon-setup-mode')
+    await ssh_call(p, 'reboot')
 
     await wait_for(node, 'reboot: Restarting system')
     dbg('leaving config mode (reboot)')
