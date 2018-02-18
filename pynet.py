@@ -47,6 +47,9 @@ class Node():
 def run(cmd):
     subprocess.run(cmd, shell=True)
 
+def run_in_netns(netns, cmd):
+    subprocess.run(f'ip netns exec {netns} ' + cmd, shell=True)
+
 stdout_buffers = {}
 processes = {}
 
@@ -166,7 +169,8 @@ async def install_client(initial_time, node):
     # move iface to netns
     dbg(f'moving {ifname} to netns {netns}')
     run(f'ip link set netns {netns} dev {ifname}')
-    run(f'ip netns exec {netns} ip link set {ifname} up')
+    run_in_netns(netns, f'ip link set lo up')
+    run_in_netns(netns, f'ip link set {ifname} up')
 
     # spawn client shell
     shell = os.environ.get('SHELL') or '/bin/bash'
