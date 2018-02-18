@@ -44,6 +44,37 @@ class Node():
             peer.add_mesh_link(self, _is_peer=True, _port=port)
         return ifname
 
+class MobileClient():
+
+    max_id = 0
+
+    def __init__(self):
+        MobileClient.max_id += 1
+        self.current_node = None
+        self.ifname_peer = f'mobile{MobileClient.max_id}_peer'
+        self.ifname = f'mobile{MobileClient.max_id}'
+        self.netns = f'mobile{MobileClient.max_id}'
+
+        run(f'ip netns add {self.netns}')
+        run_in_netns(self.netns, f'ip link del {self.ifname}')
+        run(f'ip link add {self.ifname} type veth peer name {self.ifname_peer}')
+        run(f'ip link set {self.ifname} address de:ad:be:ee:ff:01 netns {self.netns} up')
+        run(f'ip link set {self.ifname} up')
+
+    def move_to(self, node):
+        netns_new = "%s_client" % node.hostname
+        bridge_new = "br_%s_client" % node.hostname
+
+        if self.current_node is not None:
+            netns_old = "%s_client" % self.current_node.hostname
+            run_in_netns(netns_old, f'ip link set {self.ifname_peer} netns {netns_new} up')
+        else:
+            run(f'ip link set {self.ifname_peer} netns {netns_new} up')
+
+        run_in_netns(netns_new, f'ip link set {self.ifname_peer} master {bridge_new}')
+
+        self.current_node = node
+
 def run(cmd):
     subprocess.run(cmd, shell=True)
 
@@ -171,6 +202,10 @@ async def install_client(initial_time, node):
     run(f'ip link set netns {netns} dev {ifname}')
     run_in_netns(netns, f'ip link set lo up')
     run_in_netns(netns, f'ip link set {ifname} up')
+    run_in_netns(netns, f'ip link delete br_{ifname} type bridge 2> /dev/null || true') # force deletion
+    run_in_netns(netns, f'ip link add name br_{ifname} type bridge')
+    run_in_netns(netns, f'ip link set {ifname} master br_{ifname}')
+    run_in_netns(netns, f'ip link set br_{ifname} up')
 
     # spawn client shell
     shell = os.environ.get('SHELL') or '/bin/bash'
