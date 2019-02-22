@@ -5,9 +5,18 @@ import sys
 import time
 import shutil
 import asyncio
+import socket
 import asyncssh
 import subprocess
 from operator import itemgetter
+
+#import logging
+#
+#logging.basicConfig(
+#    level=logging.DEBUG,
+#    format='%(levelname)7s: %(message)s',
+#    stream=sys.stderr,
+#)
 
 image = "image.img"
 SSH_KEY_FILE = './ssh/id_rsa.key'
@@ -28,6 +37,11 @@ class Node():
         self.hostname = f'node{self.id}'
         self.mesh_links = []
         self.if_index_max = 1
+        self.uci_sets = []
+        self.uci_commits = []
+        self.site_local_prefix = SITE_LOCAL_PREFIX
+        self.next_node_addr = NEXT_NODE_ADDR
+        self.domain_code = None
 
     def add_mesh_link(self, peer, _is_peer=False, _port=None):
         self.if_index_max += 1
@@ -43,6 +57,26 @@ class Node():
         if not _is_peer:
             peer.add_mesh_link(self, _is_peer=True, _port=port)
         return ifname
+
+    def set_fastd_secret(self, secret):
+        assert(type(secret) == str)
+        assert(len(secret) == 64)
+        for k in secret:
+            assert(k in "1234567890abcdef")
+        self.uci_set('fastd', 'mesh_vpn', 'secret', secret)
+        self.uci_set('fastd', 'mesh_vpn', 'enabled', 1)
+
+    def uci_set(self, config, section, option, value):
+        self.uci_sets += ["uci set {}.{}.{}='{}'".format(
+            config, section, option, value)]
+        self.uci_commits += ["uci commit {}".format(config)]
+
+    def set_domain(self, domain_code):
+        self.uci_set('gluon', 'core', 'domain', domain_code)
+        self.domain_code = domain_code
+
+        
+
 
 class MobileClient():
 
@@ -84,6 +118,7 @@ def run_in_netns(netns, cmd):
 stdout_buffers = {}
 processes = {}
 
+@asyncio.coroutine
 def gen_qemu_call(image, node):
 
     shutil.copyfile('./' + image, './images/%02x.img' % node.id)
@@ -193,7 +228,10 @@ async def install_client(initial_time, node):
     await wait_bash_cmd(f'while ! nc {lladdr}%{ifname} 22 -w 1 > /dev/null; do sleep 1; done;')
 
     # node setup setup needs to be done here
-    async with asyncssh.connect(f'{lladdr}%{ifname}', username='root', known_hosts=None) as conn:
+    print(f'{lladdr}%{ifname}')
+    addr = f'{lladdr}%{ifname}'
+    #addr = socket.getaddrinfo(f'{lladdr}%{ifname}', 22, socket.AF_INET6, socket.SOCK_STREAM)[0]
+    async with asyncssh.connect(addr, username='root', known_hosts=None) as conn:
         await config_node(initial_time, node, conn)
     dbg(f'{node.hostname} configured')
 
@@ -215,7 +253,7 @@ async def install_client(initial_time, node):
     ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
                '-o StrictHostKeyChecking=no ' + \
                f'-i {SSH_KEY_FILE} '
-    spawn_in_tmux(node.hostname, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@{NEXT_NODE_ADDR}; do sleep 1; done"')
+    spawn_in_tmux(node.hostname, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@{node.next_node_addr}; do sleep 1; done"')
 
 def spawn_in_tmux(title, cmd):
     run(f'tmux -S test new-window -d -n {title} {cmd}')
@@ -267,6 +305,15 @@ async def config_node(initial_time, node, ssh_conn):
     await ssh_call(p, f'pretty-hostname {node.hostname}')
     await add_ssh_key(p)
 
+    # do uci configs
+    for cmd in node.uci_sets:
+        await ssh_call(p, cmd)
+    for cmd in set(node.uci_commits):
+        await ssh_call(p, cmd)
+
+    if node.domain_code is not None:
+        await ssh_call(p, "gluon-reconfigure")
+
     # reboot to operational mode
     await ssh_call(p, 'uci set gluon-setup-mode.@setup_mode[0].configured=\'1\'')
     await ssh_call(p, 'uci commit gluon-setup-mode')
@@ -314,10 +361,14 @@ def run_all():
     global bathost_entries
 
     for node in Node.all_nodes:
-        host_entries += f"{SITE_LOCAL_PREFIX}:5054:{host_id}ff:fe{node.id:02x}:3402 {node.hostname}\n"
+        host_entries += f"{node.site_local_prefix}:5054:{host_id}ff:fe{node.id:02x}:3402 {node.hostname}\n"
         client_name = node.hostname.replace('node', 'client')
-        host_entries += f"{SITE_LOCAL_PREFIX}:a854:{host_id}ff:fe{node.id:02x}:3402 {client_name}\n"
+        host_entries += f"{node.site_local_prefix}:a854:{host_id}ff:fe{node.id:02x}:3402 {client_name}\n"
         bathost_entries += f"52:54:{host_id:02x}:{node.id:02x}:34:02 {node.hostname}\n"
+        bathost_entries += f"aa:54:{host_id:02x}:{node.id:02x}:34:02 {client_name}\n"
+
+    bathost_entries += "de:ad:be:ee:ff:01 mobile1\n"
+
 
     for node in Node.all_nodes:
         loop.create_task(gen_qemu_call(image, node))

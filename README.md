@@ -65,3 +65,10 @@ run_all()
 - Nodes also support this command for bat-hosts. ```batctl tr node2```
 - To manage ssh connections, pynet automatically generates an rsa key, which is added into the image during config mode.
 - Spawing firefox as a client of a router is also possible. This is very helpful to see the statuspage of a router. Please note, that the shells opened by pynet are root shells. So if you directly start firefox inside such a shell, it has root access.
+
+
+### set fastd secret
+
+``` python
+node.set_fastd_secret('e88b6e7adf88ffb9448293ab008f2fde9a06d012973b7a73cb4947781f6020f2')
+```

@@ -4,3 +4,4 @@ ssh/*.key
 ssh/*.key.pub
 logs/*.log
 __pycache__
+secret/noise*
