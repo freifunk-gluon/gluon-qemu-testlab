@@ -75,6 +75,9 @@ class Node():
         self.uci_set('gluon', 'core', 'domain', domain_code)
         self.domain_code = domain_code
 
+    @property
+    def if_client(self):
+        return "client" + str(self.id)
         
 
 
@@ -97,7 +100,7 @@ class MobileClient():
 
     def move_to(self, node):
         netns_new = "%s_client" % node.hostname
-        bridge_new = "br_%s_client" % node.hostname
+        bridge_new = "br_" + node.if_client
 
         if self.current_node is not None:
             netns_old = "%s_client" % self.current_node.hostname
@@ -149,7 +152,7 @@ def gen_qemu_call(image, node):
             '-enable-kvm',
             '-netdev', 'user,id=hn1',
             '-device', 'rtl8139,addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
-            '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s_client' % node.hostname,
+            '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s' % node.if_client,
             '-device', 'rtl8139,addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
     # '-d', 'guest_errors', '-d', 'cpu_reset', '-gdb', 'tcp::' + str(3000 + node.id),
@@ -200,7 +203,7 @@ async def install_client(initial_time, node):
     clientname = f"client{node.id}"
     dbg = debug_print(initial_time, clientname)
 
-    ifname = "%s_client" % node.hostname
+    ifname = node.if_client
 
     # client iface link local addr
     host_id = 1
