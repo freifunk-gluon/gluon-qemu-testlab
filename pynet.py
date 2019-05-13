@@ -34,7 +34,7 @@ class Node():
         Node.max_id += 1
         Node.all_nodes += [self]
         self.id = Node.max_id
-        self.hostname = f'node{self.id}'
+        self.hostname = 'node' + str(self.id)
         self.mesh_links = []
         self.if_index_max = 1
         self.uci_sets = []
@@ -45,7 +45,7 @@ class Node():
 
     def add_mesh_link(self, peer, _is_peer=False, _port=None):
         self.if_index_max += 1
-        ifname = f'eth{self.if_index_max}'
+        ifname = 'eth' + str(self.if_index_max)
         if _port is None:
             Node.max_port += 1
             port = Node.max_port
@@ -78,7 +78,7 @@ class Node():
     @property
     def if_client(self):
         return "client" + str(self.id)
-        
+
 
 
 class MobileClient():
@@ -88,15 +88,15 @@ class MobileClient():
     def __init__(self):
         MobileClient.max_id += 1
         self.current_node = None
-        self.ifname_peer = f'mobile{MobileClient.max_id}_peer'
-        self.ifname = f'mobile{MobileClient.max_id}'
-        self.netns = f'mobile{MobileClient.max_id}'
+        self.ifname_peer = 'mobile' + str(MobileClient.max_id) + '_peer'
+        self.ifname = 'mobile' + str(MobileClient.max_id)
+        self.netns = 'mobile' + str(MobileClient.max_id)
 
-        run(f'ip netns add {self.netns}')
-        run_in_netns(self.netns, f'ip link del {self.ifname}')
-        run(f'ip link add {self.ifname} type veth peer name {self.ifname_peer}')
-        run(f'ip link set {self.ifname} address de:ad:be:ee:ff:01 netns {self.netns} up')
-        run(f'ip link set {self.ifname} up')
+        run('ip netns add ' + self.netns)
+        run_in_netns(self.netns, 'ip link del ' + self.ifname)
+        run('ip link add ' + self.ifname + ' type veth peer name ' + self.ifname_peer)
+        run('ip link set ' + self.ifname + ' address de:ad:be:ee:ff:01 netns ' + self.netns + ' up')
+        run('ip link set ' + self.ifname + ' up')
 
     def move_to(self, node):
         netns_new = "%s_client" % node.hostname
@@ -104,11 +104,11 @@ class MobileClient():
 
         if self.current_node is not None:
             netns_old = "%s_client" % self.current_node.hostname
-            run_in_netns(netns_old, f'ip link set {self.ifname_peer} netns {netns_new} up')
+            run_in_netns(netns_old, 'ip link set ' + self.ifname_peer + ' netns ' + netns_new + ' up')
         else:
-            run(f'ip link set {self.ifname_peer} netns {netns_new} up')
+            run('ip link set ' + self.ifname_peer + ' netns ' + netns_new + ' up')
 
-        run_in_netns(netns_new, f'ip link set {self.ifname_peer} master {bridge_new}')
+        run_in_netns(netns_new, 'ip link set ' + self.ifname_peer + ' master ' + bridge_new)
 
         self.current_node = node
 
@@ -116,7 +116,7 @@ def run(cmd):
     subprocess.run(cmd, shell=True)
 
 def run_in_netns(netns, cmd):
-    subprocess.run(f'ip netns exec {netns} ' + cmd, shell=True)
+    subprocess.run('ip netns exec ' + netns + ' ' + cmd, shell=True)
 
 stdout_buffers = {}
 processes = {}
@@ -138,7 +138,7 @@ def gen_qemu_call(image, node):
             raise ValueError('conn_type invalid: ' + str(conn_type))
 
         if conn_type == 'connect':
-            yield from wait_bash_cmd(f'while ! ss -tlp4n | grep ":{port}" &>/dev/null; do sleep 1; done;')
+            yield from wait_bash_cmd('while ! ss -tlp4n | grep ":' + str(port) + '" &>/dev/null; do sleep 1; done;')
 
         mesh_ifaces += [
             '-device', ('rtl8139,addr=0x%02x,netdev=mynet%d,id=m_nic%d,mac=' + \
@@ -174,13 +174,13 @@ async def ssh_call(p, cmd):
 
 async def set_mesh_devs(p, devs):
     for d in devs:
-        await ssh_call(p, f"uci set network.{d}_mesh=interface")
-        await ssh_call(p, f"uci set network.{d}_mesh.auto=1")
-        await ssh_call(p, f"uci set network.{d}_mesh.proto=gluon_wired")
-        await ssh_call(p, f"uci set network.{d}_mesh.ifname={d}")
+        await ssh_call(p, 'uci set network.' + d + '_mesh=interface')
+        await ssh_call(p, 'uci set network.' + d + '_mesh.auto=1')
+        await ssh_call(p, 'uci set network.' + d + '_mesh.proto=gluon_wired')
+        await ssh_call(p, 'uci set network.' + d + '_mesh.ifname=' + d)
 
         # allow vxlan in firewall
-        await ssh_call(p, f'uci add_list firewall.wired_mesh.network={d}_mesh')
+        await ssh_call(p, 'uci add_list firewall.wired_mesh.network=' + d + '_mesh')
 
     await ssh_call(p, 'uci commit network')
     await ssh_call(p, 'uci commit firewall')
@@ -189,7 +189,7 @@ async def add_ssh_key(p):
     # TODO: this removes baked in ssh keys :/
     with open(SSH_PUBKEY_FILE) as f:
         content = f.read()
-        await ssh_call(p, f'cat >> /etc/dropbear/authorized_keys <<EOF\n{content}')
+        await ssh_call(p, 'cat >> /etc/dropbear/authorized_keys <<EOF\n' + content)
 
 @asyncio.coroutine
 def wait_bash_cmd(cmd):
@@ -200,7 +200,7 @@ def wait_bash_cmd(cmd):
     yield from proc.wait()
 
 async def install_client(initial_time, node):
-    clientname = f"client{node.id}"
+    clientname = "client" + str(node.id)
     dbg = debug_print(initial_time, clientname)
 
     ifname = node.if_client
@@ -209,57 +209,57 @@ async def install_client(initial_time, node):
     host_id = 1
     lladdr = "fe80::5054:%02xff:fe%02x:34%02x" % (host_id, node.id, 2)
 
-    dbg(f'waiting for iface {ifname} to appear')
-    await wait_bash_cmd(f'while ! ip link show dev {ifname} &>/dev/null; do sleep 1; done;')
+    dbg('waiting for iface ' + ifname + ' to appear')
+    await wait_bash_cmd('while ! ip link show dev ' + ifname + ' &>/dev/null; do sleep 1; done;')
 
     # set mac of client tap iface on host system
     client_iface_mac = "aa:54:%02x:%02x:34:%02x" % (host_id, node.id, 2)
-    run(f'ip link set {ifname} address {client_iface_mac}')
+    run('ip link set ' + ifname + ' address ' + client_iface_mac)
 
-    run(f'ip link set {ifname} up')
-    await wait_bash_cmd(f'while ! ping -c 1 {lladdr}%{ifname} &>/dev/null; do sleep 1; done;')
-    dbg(f'iface {ifname} appeared')
+    addr = lladdr + '%' + ifname
+
+    run('ip link set ' + ifname + ' up')
+    await wait_bash_cmd('while ! ping -c 1 ' + addr + ' &>/dev/null; do sleep 1; done;')
+    dbg('iface ' + ifname + ' appeared')
 
     # create netns
     netns = "%s_client" % node.hostname
     # TODO: delete them correctly
     # Issue with mountpoints yet http://man7.org/linux/man-pages/man7/mount_namespaces.7.html
-    run(f'ip netns add {netns}')
+    run('ip netns add ' + netns)
     gen_etc_hosts_for_netns(netns)
 
     # wait for ssh TODO: hacky
-    await wait_bash_cmd(f'while ! nc {lladdr}%{ifname} 22 -w 1 > /dev/null; do sleep 1; done;')
+    await wait_bash_cmd('while ! nc ' + addr + ' 22 -w 1 > /dev/null; do sleep 1; done;')
 
     # node setup setup needs to be done here
-    print(f'{lladdr}%{ifname}')
-    addr = f'{lladdr}%{ifname}'
     #addr = socket.getaddrinfo(f'{lladdr}%{ifname}', 22, socket.AF_INET6, socket.SOCK_STREAM)[0]
     async with asyncssh.connect(addr, username='root', known_hosts=None) as conn:
         await config_node(initial_time, node, conn)
-    dbg(f'{node.hostname} configured')
+    dbg(node.hostname + ' configured')
 
     # move iface to netns
-    dbg(f'moving {ifname} to netns {netns}')
-    run(f'ip link set netns {netns} dev {ifname}')
-    run_in_netns(netns, f'ip link set lo up')
-    run_in_netns(netns, f'ip link set {ifname} up')
-    run_in_netns(netns, f'ip link delete br_{ifname} type bridge 2> /dev/null || true') # force deletion
-    run_in_netns(netns, f'ip link add name br_{ifname} type bridge')
-    run_in_netns(netns, f'ip link set {ifname} master br_{ifname}')
-    run_in_netns(netns, f'ip link set br_{ifname} up')
+    dbg('moving ' + ifname + ' to netns ' + netns)
+    run('ip link set netns ' + netns + ' dev ' + ifname)
+    run_in_netns(netns, 'ip link set lo up')
+    run_in_netns(netns, 'ip link set ' + ifname + ' up')
+    run_in_netns(netns, 'ip link delete br_' + ifname + ' type bridge 2> /dev/null || true') # force deletion
+    run_in_netns(netns, 'ip link add name br_' + ifname + ' type bridge')
+    run_in_netns(netns, 'ip link set ' + ifname + ' master br_' + ifname)
+    run_in_netns(netns, 'ip link set br_' + ifname + ' up')
 
     # spawn client shell
     shell = os.environ.get('SHELL') or '/bin/bash'
-    spawn_in_tmux(clientname, f'ip netns exec {netns} {shell}')
+    spawn_in_tmux(clientname, 'ip netns exec ' + netns + ' ' + shell)
 
     # spawn ssh shell
     ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
                '-o StrictHostKeyChecking=no ' + \
-               f'-i {SSH_KEY_FILE} '
-    spawn_in_tmux(node.hostname, f'ip netns exec {netns} /bin/bash -c "while ! ssh {ssh_opts} root@{node.next_node_addr}; do sleep 1; done"')
+               '-i ' + SSH_KEY_FILE + ' '
+    spawn_in_tmux(node.hostname, 'ip netns exec ' + netns + ' /bin/bash -c "while ! ssh ' + ssh_opts + ' root@' + node.next_node_addr + '; do sleep 1; done"')
 
 def spawn_in_tmux(title, cmd):
-    run(f'tmux -S test new-window -d -n {title} {cmd}')
+    run('tmux -S test new-window -d -n ' + title + ' ' + cmd)
 
 @asyncio.coroutine
 def read_to_buffer(node):
@@ -267,7 +267,7 @@ def read_to_buffer(node):
         yield from asyncio.sleep(0)
     process = processes[node.id]
     stdout_buffers[node.id] = b""
-    with open(f'logs/{node.hostname}.log', 'wb') as f1:
+    with open('logs/' + node.hostname + '.log', 'wb') as f1:
         while True:
             b = yield from process.stdout.read(1) # TODO: is this unbuffered?
             stdout_buffers[node.id] += b
@@ -286,13 +286,13 @@ def wait_for(node, b):
         yield from asyncio.sleep(0)
 
 async def add_hosts(p):
-    await ssh_call(p, f'cat >> /etc/hosts <<EOF\n{host_entries}\n')
-    await ssh_call(p, f'cat >> /etc/bat-hosts <<EOF\n{bathost_entries}\n')
+    await ssh_call(p, 'cat >> /etc/hosts <<EOF\n' + host_entries + '\n')
+    await ssh_call(p, 'cat >> /etc/bat-hosts <<EOF\n' + bathost_entries + '\n')
 
 def debug_print(since, hostname):
     def printfn(message):
         delta = time.time() - since
-        print(f'[{delta:>8.2f} | {hostname:<9}] {message}')
+        print('[{delta:>8.2f} | {hostname:<9}] {message}'.format(delta=delta, hostname=hostname, message=message))
     return printfn
 
 async def config_node(initial_time, node, ssh_conn):
@@ -305,7 +305,7 @@ async def config_node(initial_time, node, ssh_conn):
 
     await set_mesh_devs(p, mesh_ifaces)
     await add_hosts(p)
-    await ssh_call(p, f'pretty-hostname {node.hostname}')
+    await ssh_call(p, 'pretty-hostname ' + node.hostname)
     await add_ssh_key(p)
 
     # do uci configs
@@ -336,11 +336,14 @@ async def config_node(initial_time, node, ssh_conn):
 def gen_etc_hosts_for_netns(netns):
     # use /etc/hosts and extend it
     with open('/etc/hosts') as h:
-        if not os.path.exists('/etc/netns/'):
-            os.mkdir('/etc/netns')
-        if not os.path.exists(f'/etc/netns/{netns}/'):
-            os.mkdir(f'/etc/netns/{netns}')
-        with open(f'/etc/netns/{netns}/hosts', 'w') as f:
+        p = '/etc/netns/'
+        if not os.path.exists(p):
+            os.mkdir(p)
+        p += netns + '/'
+        if not os.path.exists(p):
+            os.mkdir(p)
+        p += 'hosts'
+        with open(p, 'w') as f:
             f.write(h.read())
             f.write('\n')
             f.write(host_entries)
@@ -355,7 +358,7 @@ def run_all():
 
     # TODO: cd to project folder
     if not os.path.exists(SSH_PUBKEY_FILE):
-        run(f'ssh-keygen -t rsa -f {SSH_KEY_FILE} -N \'\'')
+        run('ssh-keygen -t rsa -f ' + SSH_KEY_FILE + ' -N \'\'')
 
     loop = asyncio.get_event_loop()
 
@@ -364,11 +367,11 @@ def run_all():
     global bathost_entries
 
     for node in Node.all_nodes:
-        host_entries += f"{node.site_local_prefix}:5054:{host_id}ff:fe{node.id:02x}:3402 {node.hostname}\n"
+        host_entries += "{node.site_local_prefix}:5054:{host_id}ff:fe{node.id:02x}:3402 {node.hostname}\n".format(node=node, host_id=host_id)
         client_name = node.hostname.replace('node', 'client')
-        host_entries += f"{node.site_local_prefix}:a854:{host_id}ff:fe{node.id:02x}:3402 {client_name}\n"
-        bathost_entries += f"52:54:{host_id:02x}:{node.id:02x}:34:02 {node.hostname}\n"
-        bathost_entries += f"aa:54:{host_id:02x}:{node.id:02x}:34:02 {client_name}\n"
+        host_entries += "{node.site_local_prefix}:a854:{host_id}ff:fe{node.id:02x}:3402 {client_name}\n".format(node=node, host_id=host_id, client_name=client_name)
+        bathost_entries += "52:54:{host_id:02x}:{node.id:02x}:34:02 {node.hostname}\n".format(node=node, host_id=host_id)
+        bathost_entries += "aa:54:{host_id:02x}:{node.id:02x}:34:02 {client_name}\n".format(node=node, host_id=host_id, client_name=client_name)
 
     bathost_entries += "de:ad:be:ee:ff:01 mobile1\n"
 
