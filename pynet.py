@@ -23,6 +23,7 @@ SSH_KEY_FILE = './ssh/id_rsa.key'
 SSH_PUBKEY_FILE = SSH_KEY_FILE + '.pub'
 NEXT_NODE_ADDR = 'fdca:ffee:8::1'
 SITE_LOCAL_PREFIX = 'fdca:ffee:8:0'
+HOST_ID = 1
 
 class Node():
 
@@ -127,7 +128,7 @@ def gen_qemu_call(image, node):
     shutil.copyfile('./' + image, './images/%02x.img' % node.id)
 
     # TODO: machine identifier
-    host_id = 1
+    host_id = HOST_ID
     nat_mac = "52:54:%02x:%02x:34:%02x" % (host_id, node.id, 1)
     client_mac = "52:54:%02x:%02x:34:%02x" % (host_id, node.id, 2)
 
@@ -206,7 +207,7 @@ async def install_client(initial_time, node):
     ifname = node.if_client
 
     # client iface link local addr
-    host_id = 1
+    host_id = HOST_ID
     lladdr = "fe80::5054:%02xff:fe%02x:34%02x" % (host_id, node.id, 2)
 
     dbg('waiting for iface ' + ifname + ' to appear')
@@ -362,7 +363,7 @@ def run_all():
 
     loop = asyncio.get_event_loop()
 
-    host_id = 1
+    host_id = HOST_ID
     global host_entries
     global bathost_entries
 
