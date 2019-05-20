@@ -235,7 +235,7 @@ async def install_client(initial_time, node):
 
     # node setup setup needs to be done here
     #addr = socket.getaddrinfo(f'{lladdr}%{ifname}', 22, socket.AF_INET6, socket.SOCK_STREAM)[0]
-    async with asyncssh.connect(addr, username='root', known_hosts=None) as conn:
+    async with asyncssh.connect(addr, username='root', known_hosts=None, client_keys=[SSH_KEY_FILE]) as conn:
         await config_node(initial_time, node, conn)
     dbg(node.hostname + ' configured')
 
