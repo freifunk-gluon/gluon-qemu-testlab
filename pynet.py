@@ -134,6 +134,14 @@ def gen_qemu_call(image, node):
 
     mesh_ifaces = []
     mesh_id = 1
+
+    eth_driver = 'rtl8139'
+    # eth_driver = 'e1000'
+    # eth_driver = 'pcnet' # driver is buggy
+    # eth_driver = 'vmxnet3' # no driver in gluon
+    # eth_driver = 'ne2k_pci' # driver seems buggy
+    # eth_driver = 'virtio-net-pci'
+
     for _, _, conn_type, port in node.mesh_links:
         if conn_type not in ['listen', 'connect']:
             raise ValueError('conn_type invalid: ' + str(conn_type))
@@ -142,7 +150,7 @@ def gen_qemu_call(image, node):
             yield from wait_bash_cmd('while ! ss -tlp4n | grep ":' + str(port) + '" &>/dev/null; do sleep 1; done;')
 
         mesh_ifaces += [
-            '-device', ('rtl8139,addr=0x%02x,netdev=mynet%d,id=m_nic%d,mac=' + \
+            '-device', (eth_driver + ',addr=0x%02x,netdev=mynet%d,id=m_nic%d,mac=' + \
                 "52:54:%02x:%02x:34:%02x") % (10 + mesh_id, mesh_id, mesh_id, host_id, node.id, 10 + mesh_id),
             '-netdev', 'socket,id=mynet%d,%s=:%d' % (mesh_id, conn_type, port)
         ]
@@ -152,9 +160,9 @@ def gen_qemu_call(image, node):
     call = ['-nographic',
             '-enable-kvm',
             '-netdev', 'user,id=hn1',
-            '-device', 'rtl8139,addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
+            '-device', eth_driver + ',addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
             '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s' % node.if_client,
-            '-device', 'rtl8139,addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
+            '-device', eth_driver + ',addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
     # '-d', 'guest_errors', '-d', 'cpu_reset', '-gdb', 'tcp::' + str(3000 + node.id),
     args = ['qemu-system-x86_64',
