@@ -159,6 +159,8 @@ def gen_qemu_call(image, node):
 
     call = ['-nographic',
             '-enable-kvm',
+#            '-no-hpet',
+#            '-cpu', 'host',
             '-netdev', 'user,id=hn1',
             '-device', eth_driver + ',addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
             '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s' % node.if_client,
