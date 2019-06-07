@@ -3,5 +3,7 @@ images/*.img
 ssh/*.key
 ssh/*.key.pub
 logs/*.log
+ptys/*
+!ptys/.keep
 __pycache__
 secret/noise*

@@ -160,6 +160,7 @@ def run_in_netns(netns, cmd):
 
 stdout_buffers = {}
 processes = {}
+masters = {}
 
 @asyncio.coroutine
 def gen_qemu_call(image, node):
@@ -219,12 +220,13 @@ def gen_qemu_call(image, node):
     args = ['qemu-system-x86_64',
             '-drive', 'format=raw,file=./images/%02x.img' % node.id] + call + mesh_ifaces
 
-    fifo_path = './fifos/%02x' % node.id
-    if os.path.exists(fifo_path):
-        os.remove(fifo_path)
-    os.mkfifo(fifo_path)
-    stdin = os.open(fifo_path, os.O_NONBLOCK | os.O_RDONLY)
-    process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=stdin)
+    master, slave = os.openpty()
+    pty_path = fifo_path = './ptys/%02x' % node.id;
+    if os.path.exists(pty_path):
+        os.remove(pty_path)
+    os.symlink(os.ttyname(slave), pty_path)
+    process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=master)
+    masters[node.id] = master
 
     processes[node.id] = yield from process
 
@@ -336,11 +338,17 @@ def read_to_buffer(node):
     while processes.get(node.id) is None:
         yield from asyncio.sleep(0)
     process = processes[node.id]
+    master = masters[node.id]
     stdout_buffers[node.id] = b""
     with open('logs/' + node.hostname + '.log', 'wb') as f1:
         while True:
             b = yield from process.stdout.read(1) # TODO: is this unbuffered?
             stdout_buffers[node.id] += b
+            try:
+                os.write(master, b)
+            except BlockingIOError:
+                # ignore the blocking error, when slave side is not opened
+                pass
             f1.write(b)
             if b == b'\n':
                 f1.flush()
