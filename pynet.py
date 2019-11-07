@@ -1,4 +1,4 @@
-#!/bin/python36
+#!/usr/bin/env python3
 
 import os
 import sys
@@ -204,7 +204,7 @@ async def add_ssh_key(p):
 
 @asyncio.coroutine
 def wait_bash_cmd(cmd):
-    create = asyncio.create_subprocess_exec("/bin/bash", '-c', cmd)
+    create = asyncio.create_subprocess_exec(shutil.which("bash"), '-c', cmd)
     proc = yield from create
 
     # Wait for the subprocess exit
@@ -365,7 +365,7 @@ bathost_entries = ""
 def run_all():
 
     if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
-        os.execl('/usr/bin/tmux', 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
+        os.execl(shutil.which('tmux'), 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
 
     # TODO: cd to project folder
     if not os.path.exists(SSH_PUBKEY_FILE):
