@@ -1,4 +1,4 @@
-#!/bin/python36
+#!/usr/bin/env python3
 
 import os
 import sys
@@ -257,7 +257,7 @@ async def add_ssh_key(p):
 
 @asyncio.coroutine
 def wait_bash_cmd(cmd):
-    create = asyncio.create_subprocess_exec("/bin/bash", '-c', cmd)
+    create = asyncio.create_subprocess_exec(shutil.which("bash"), '-c', cmd)
     proc = yield from create
 
     # Wait for the subprocess exit

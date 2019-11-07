@@ -44,7 +44,7 @@ sudo python36 scenarios/chain_4_nodes.py --run-forever  # start a scenario
 Here we connect three nodes in a chain. The syntax is
 standard python syntax.
 ```
-#!/usr/bin/python36
+#!/usr/bin/env python3
 import sys
 sys.path.append(".")
 from pynet import *
