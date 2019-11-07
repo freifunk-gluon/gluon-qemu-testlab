@@ -1,4 +1,4 @@
-#!/usr/bin/python36
+#!/usr/bin/env python3
 
 from pynet import *
 import time
