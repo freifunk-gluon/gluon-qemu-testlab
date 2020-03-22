@@ -11,25 +11,24 @@ b = Node()
 connect(a, b)
 
 loop = configure_all()
-#loop = asyncio.get_event_loop()
+# loop = asyncio.get_event_loop()
 
 p_id = 1
 processes = {}
-async def _ssh(p, n, cmd):
+async def _ssh(p):
+    n = p['node']
+    cmd = p['cmd']
     global processes
     async with Node.ssh_conn(n) as c:
         res = await c.create_process(cmd)
         p['process'] = res
         return await res.wait()
 
-wait_for_list = []
-
 def ssh(node, cmd):
     global p_id
     global processes
 
-    p = { "process": None, "task": None, "exit_with_others": False, "cmd": cmd, "expect_success": False }
-    p['task'] = loop.create_task(_ssh(p, node, cmd))
+    p = { "node": node, "process": None, "task": None, "exit_with_others": False, "cmd": cmd, "expect_success": False }
     processes[p_id] = p
     p_id += 1
 
@@ -47,10 +46,11 @@ def expect_success(p):
     p['expect_success'] = True
     return p
 
-
-def sync():
+def _sync():
     global processes
-    global wait_for_list
+
+    for proc in processes.values():
+        proc['task'] = loop.create_task(_ssh(proc))
 
     for proc in processes.values():
         if proc['exit_with_others']:
@@ -77,10 +77,27 @@ def sync():
         if proc['expect_success'] and proc['process'].exit_status > 0:
             success = False
 
-    processes = {}
-    wait_for_list = []
+    if success:
+        processes = {}
 
     return success
+
+def sync(retries=1, sleep=5):
+    while True:
+        success = _sync()
+        if success:
+            break
+
+        retries -= 1
+
+        if retries < 1:
+            close_qemus()
+            print('TESTS FAILED!')
+            exit(1)
+
+        print('retrying. ' + str(retries) + ' retries left. retrying in ' + str(sleep) + ' seconds.')
+        time.sleep(sleep)
+        print('retrying now.')
 
 
 rule = """
@@ -99,22 +116,8 @@ ssh(b, 'ubus wait_for network.interface.bat0')
 ssh(a, 'ubus wait_for network.interface.bat0')
 sync()
 
-retries = 10
-while True:
-    exit_with_others(ssh(b, 'iperf3 -V -s'))
-    expect_success(ssh(a, 'sleep 3; iperf3 -V -c node2'))
-
-    success = sync()
-    if success:
-        break
-
-    retries -= 1
-
-    if retries < 1:
-        close_qemus()
-        exit(1)
-
-    time.sleep(5)
-    print('retrying. ' + str(retries) + ' retries left.')
+exit_with_others(ssh(b, 'iperf3 -V -s'))
+expect_success(ssh(a, 'sleep 3; iperf3 -V -c node2'))
+sync(retries=10)
 
 close_qemus()
