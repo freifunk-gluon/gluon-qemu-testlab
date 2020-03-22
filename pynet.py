@@ -80,6 +80,28 @@ class Node():
     def if_client(self):
         return "client" + str(self.id)
 
+    class ssh_conn:
+
+        def __init__(self, node, wait_before_connecting=False):
+            self.wait_before_connecting = wait_before_connecting
+            self.node = node
+
+        async def __aenter__(self):
+            # client iface link local addr
+            ifname = self.node.if_client
+            host_id = HOST_ID
+            lladdr = "fe80::5054:%02xff:fe%02x:34%02x" % (host_id, self.node.id, 2)
+            addr = lladdr + '%' + ifname
+
+            if self.wait_before_connecting:
+                # wait for ssh TODO: hacky
+                await wait_bash_cmd('while ! nc ' + addr + ' 22 -w 1 > /dev/null; do sleep 1; done;')
+
+            self.conn = await asyncssh.connect(addr, username='root', known_hosts=None, client_keys=[SSH_KEY_FILE])
+            return self.conn
+
+        async def __aexit__(self, type, value, traceback):
+            self.conn.close()
 
 
 class MobileClient():
@@ -216,58 +238,51 @@ async def install_client(initial_time, node):
 
     ifname = node.if_client
 
-    # client iface link local addr
-    host_id = HOST_ID
-    lladdr = "fe80::5054:%02xff:fe%02x:34%02x" % (host_id, node.id, 2)
-
     dbg('waiting for iface ' + ifname + ' to appear')
     await wait_bash_cmd('while ! ip link show dev ' + ifname + ' &>/dev/null; do sleep 1; done;')
 
+    host_id = HOST_ID
     # set mac of client tap iface on host system
     client_iface_mac = "aa:54:%02x:%02x:34:%02x" % (host_id, node.id, 2)
     run('ip link set ' + ifname + ' address ' + client_iface_mac)
-
-    addr = lladdr + '%' + ifname
-
     run('ip link set ' + ifname + ' up')
-    await wait_bash_cmd('while ! ping -c 1 ' + addr + ' &>/dev/null; do sleep 1; done;')
+    #await wait_bash_cmd('while ! ping -c 1 ' + addr + ' &>/dev/null; do sleep 1; done;')
     dbg('iface ' + ifname + ' appeared')
+
+    # node setup setup needs to be done here
+    #addr = socket.getaddrinfo(f'{lladdr}%{ifname}', 22, socket.AF_INET6, socket.SOCK_STREAM)[0]
+    async with Node.ssh_conn(node, wait_before_connecting=True) as conn:
+        await config_node(initial_time, node, conn)
+    dbg(node.hostname + ' configured')
 
     # create netns
     netns = "%s_client" % node.hostname
     # TODO: delete them correctly
     # Issue with mountpoints yet http://man7.org/linux/man-pages/man7/mount_namespaces.7.html
-    run('ip netns add ' + netns)
-    gen_etc_hosts_for_netns(netns)
+    use_netns = False
+    if use_netns:
+        run('ip netns add ' + netns)
+        gen_etc_hosts_for_netns(netns)
 
-    # wait for ssh TODO: hacky
-    await wait_bash_cmd('while ! nc ' + addr + ' 22 -w 1 > /dev/null; do sleep 1; done;')
+        # move iface to netns
+        dbg('moving ' + ifname + ' to netns ' + netns)
+        run('ip link set netns ' + netns + ' dev ' + ifname)
+        run_in_netns(netns, 'ip link set lo up')
+        run_in_netns(netns, 'ip link set ' + ifname + ' up')
+        run_in_netns(netns, 'ip link delete br_' + ifname + ' type bridge 2> /dev/null || true') # force deletion
+        run_in_netns(netns, 'ip link add name br_' + ifname + ' type bridge')
+        run_in_netns(netns, 'ip link set ' + ifname + ' master br_' + ifname)
+        run_in_netns(netns, 'ip link set br_' + ifname + ' up')
 
-    # node setup setup needs to be done here
-    #addr = socket.getaddrinfo(f'{lladdr}%{ifname}', 22, socket.AF_INET6, socket.SOCK_STREAM)[0]
-    async with asyncssh.connect(addr, username='root', known_hosts=None, client_keys=[SSH_KEY_FILE]) as conn:
-        await config_node(initial_time, node, conn)
-    dbg(node.hostname + ' configured')
+        # spawn client shell
+        shell = os.environ.get('SHELL') or '/bin/bash'
+        spawn_in_tmux(clientname, 'ip netns exec ' + netns + ' ' + shell)
 
-    # move iface to netns
-    dbg('moving ' + ifname + ' to netns ' + netns)
-    run('ip link set netns ' + netns + ' dev ' + ifname)
-    run_in_netns(netns, 'ip link set lo up')
-    run_in_netns(netns, 'ip link set ' + ifname + ' up')
-    run_in_netns(netns, 'ip link delete br_' + ifname + ' type bridge 2> /dev/null || true') # force deletion
-    run_in_netns(netns, 'ip link add name br_' + ifname + ' type bridge')
-    run_in_netns(netns, 'ip link set ' + ifname + ' master br_' + ifname)
-    run_in_netns(netns, 'ip link set br_' + ifname + ' up')
-
-    # spawn client shell
-    shell = os.environ.get('SHELL') or '/bin/bash'
-    spawn_in_tmux(clientname, 'ip netns exec ' + netns + ' ' + shell)
-
-    # spawn ssh shell
-    ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
-               '-o StrictHostKeyChecking=no ' + \
-               '-i ' + SSH_KEY_FILE + ' '
-    spawn_in_tmux(node.hostname, 'ip netns exec ' + netns + ' /bin/bash -c "while ! ssh ' + ssh_opts + ' root@' + node.next_node_addr + '; do sleep 1; done"')
+        # spawn ssh shell
+        ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
+                   '-o StrictHostKeyChecking=no ' + \
+                   '-i ' + SSH_KEY_FILE + ' '
+        spawn_in_tmux(node.hostname, 'ip netns exec ' + netns + ' /bin/bash -c "while ! ssh ' + ssh_opts + ' root@' + node.next_node_addr + '; do sleep 1; done"')
 
 def spawn_in_tmux(title, cmd):
     run('tmux -S test new-window -d -n ' + title + ' ' + cmd)
@@ -361,8 +376,15 @@ def gen_etc_hosts_for_netns(netns):
 
 host_entries = ""
 bathost_entries = ""
+configured = False
+global loop
+loop = None
+config_tasks = []
 
-def run_all():
+def configure_all():
+    global configured
+    if configured:
+        return
 
     if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
         os.execl('/usr/bin/tmux', 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
@@ -371,11 +393,13 @@ def run_all():
     if not os.path.exists(SSH_PUBKEY_FILE):
         run('ssh-keygen -t rsa -f ' + SSH_KEY_FILE + ' -N \'\'')
 
+    global loop
     loop = asyncio.get_event_loop()
 
     host_id = HOST_ID
     global host_entries
     global bathost_entries
+    global config_tasks
 
     for node in Node.all_nodes:
         host_entries += "{node.site_local_prefix}:5054:{host_id}ff:fe{node.id:02x}:3402 {node.hostname}\n".format(node=node, host_id=host_id)
@@ -386,12 +410,25 @@ def run_all():
 
     bathost_entries += "de:ad:be:ee:ff:01 mobile1\n"
 
-
     for node in Node.all_nodes:
         loop.create_task(gen_qemu_call(image, node))
         loop.create_task(read_to_buffer(node))
-        loop.create_task(install_client(initial_time, node))
+        config_tasks += [loop.create_task(install_client(initial_time, node))]
 
+    configured = True
+
+    for config_task in config_tasks:
+        loop.run_until_complete(config_task)
+
+    print('loop inside', loop)
+    return loop
+
+def close_qemus():
+    for p in processes.values():
+        p.terminate()
+
+def run_forever():
+    configure_all()
     loop.run_forever()
 
 def connect(a, b):
