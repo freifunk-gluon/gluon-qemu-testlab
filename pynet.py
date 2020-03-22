@@ -434,4 +434,95 @@ def run_forever():
 def connect(a, b):
     a.add_mesh_link(b)
 
+####
+#### TESTING API
+####
+
+p_id = 1
+ssh_processes = {}
+async def _ssh(p):
+    n = p['node']
+    cmd = p['cmd']
+    global ssh_processes
+    async with Node.ssh_conn(n) as c:
+        res = await c.create_process(cmd)
+        p['process'] = res
+        return await res.wait()
+
+def ssh(node, cmd):
+    global p_id
+    global ssh_processes
+
+    p = { "node": node, "process": None, "task": None, "exit_with_others": False, "cmd": cmd, "expect_success": False }
+    ssh_processes[p_id] = p
+    p_id += 1
+
+    return p
+
+def ssh_singlecmd(node, cmd):
+    ssh(node, cmd)
+    sync()
+
+def exit_with_others(p):
+    p['exit_with_others'] = True
+    return p
+
+def expect_success(p):
+    p['expect_success'] = True
+    return p
+
+def _sync():
+    global ssh_processes
+
+    for proc in ssh_processes.values():
+        proc['task'] = loop.create_task(_ssh(proc))
+
+    for proc in ssh_processes.values():
+        if proc['exit_with_others']:
+            continue
+
+        loop.run_until_complete(proc['task'])
+
+    for proc in ssh_processes.values():
+        p = proc['process']
+        t = proc['task']
+
+        if p.exit_status is None:
+            print('sending SIGINT to "' + p.command + '"')
+            p.send_signal('INT')
+        else:
+            print('command "' + p.command + '" exited with status code ' + str(p.exit_status))
+            print('stdout:')
+            print(t.result().stdout)
+            print('stderr:')
+            print(t.result().stderr)
+
+    success = True
+    for proc in ssh_processes.values():
+        if proc['expect_success'] and proc['process'].exit_status > 0:
+            success = False
+
+    if success:
+        ssh_processes = {}
+
+    return success
+
+def sync(retries=1, sleep=5):
+    while True:
+        success = _sync()
+        if success:
+            break
+
+        retries -= 1
+
+        if retries < 1:
+            close_qemus()
+            print('TESTS FAILED!')
+            exit(1)
+
+        print('retrying. ' + str(retries) + ' retries left. retrying in ' + str(sleep) + ' seconds.')
+        time.sleep(sleep)
+        print('retrying now.')
+
+
 initial_time = time.time()
