@@ -72,8 +72,9 @@ exit_with_others(ssh(n, c)) # enqueues a command, but sync() will not wait for t
                             # helpful for server commands which would run forever.
 
 sync()                      # runs all enqueued commands simultaneously till they end
-check(ssh(n, c))            # the command c is started directly on node n and check() will only return after it is finished.
-                            # check() returns True, if the return code was successful.
+check(ssh(n, c))            # the command c is started directly on node n and check() will
+                            # only return after it is finished. check() returns True, if the
+                            # return code was successful.
 ```
 
 ### CLI
