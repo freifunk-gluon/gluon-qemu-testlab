@@ -28,8 +28,13 @@ ssh(b, 'ubus wait_for network.interface.bat0')
 ssh(a, 'ubus wait_for network.interface.bat0')
 sync()
 
-exit_with_others(ssh(b, 'iperf3 -V -s'))
-expect_success(ssh(a, 'iperf3 -V -c node2'))
-sync(retries=10)
+exit_with_others(ssh(b, 'iperf3 -V -s'))       # sync() will not wait for this cmd to exit, but
+                                               # will interrupt it via SIGINT
+
+expect_success(ssh(a, 'iperf3 -V -c node2'))   # if this command does not return with status
+                                               # equal to zero this test will fail
+
+sync(retries=10)                               # the tests are performed with 10 retries, because
+                                               # initially network might not be set up correctly
 
 close_qemus()
