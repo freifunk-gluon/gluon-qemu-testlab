@@ -10,7 +10,12 @@ b = Node()
 
 connect(a, b)
 
-configure_all()
+configure_all()                                # This command boots the qemu instances
+
+# API Description:
+#
+# ssh(n, c) - enqueues a command c on node n, but does not yet run them
+# sync()    - runs all enqueued commands simultaneously till they end
 
 rule = """
 config rule 'iperf3'                          
