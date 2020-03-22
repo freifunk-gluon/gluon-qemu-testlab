@@ -117,7 +117,7 @@ ssh(a, 'ubus wait_for network.interface.bat0')
 sync()
 
 exit_with_others(ssh(b, 'iperf3 -V -s'))
-expect_success(ssh(a, 'sleep 3; iperf3 -V -c node2'))
+expect_success(ssh(a, 'iperf3 -V -c node2'))
 sync(retries=10)
 
 close_qemus()
