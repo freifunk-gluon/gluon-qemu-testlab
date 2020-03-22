@@ -35,8 +35,8 @@ pip install -r requirements.txt
 ## Quickstart
 
 ``` shell
-sh update_image.sh                        # download an image
-sudo python36 scenarios/chain_4_nodes.py  # start a scenario
+sh update_image.sh                                      # download an image
+sudo python36 scenarios/chain_4_nodes.py --run-forever  # start a scenario
 ```
 
 ## Example scenario
@@ -56,19 +56,49 @@ c = Node()
 connect(a, b)
 connect(b, c)
 
-run_all()
+start()
+# tests could go here
+finish()
+```
+
+### API
+
+``` python
+ssh(n, c)                   # enqueues a command c on node n, but does not yet run them
+expect_success(ssh(n, c))   # enqueues similar to to ssh(n, c), but the test will fail, if
+                            # this command does not return sucessfully
+exit_with_others(ssh(n, c)) # enqueues a command, but sync() will not wait for this command
+                            # to exit, but will interrupt it via SIGINT (CTRL+C)                          
+
+sync()                      # runs all enqueued commands simultaneously till they end
+check(ssh(n, c))            # the command c is started directly on node n and check() will only return after it is finished.
+                            # check() returns True, if the return code was successful.
+```
+
+### CLI
+
+```
+lemoer@orange ~/d/f/g/pynet> python3.6 scenarios/pair.py -h
+usage: pair.py [-h] [--run-forever] [--run-tests-on-existing-instane]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --run-forever
+  --run-tests-on-existing-instance
 ```
 
 ## Advanced gimmics
 
-- Both nodes and simulated clients support resolving names of each other. ```ping client5```
+- Nodes support resolving names of each other. ```ping node1```
 - Nodes also support this command for bat-hosts. ```batctl tr node2```
 - To manage ssh connections, pynet automatically generates an rsa key, which is added into the image during config mode.
-- Spawing firefox as a client of a router is also possible. This is very helpful to see the statuspage of a router. Please note, that the shells opened by pynet are root shells. So if you directly start firefox inside such a shell, it has root access.
-
 
 ### set fastd secret
 
 ``` python
 node.set_fastd_secret('e88b6e7adf88ffb9448293ab008f2fde9a06d012973b7a73cb4947781f6020f2')
 ```
+
+#### currently disabled features:
+- Client namespaces using network namespaces.
+- Spawing firefox as a client of a router is also possible. This is very helpful to see the statuspage of a router. Please note, that the shells opened by pynet are root shells. So if you directly start firefox inside such a shell, it has root access.
