@@ -24,6 +24,8 @@ SSH_PUBKEY_FILE = SSH_KEY_FILE + '.pub'
 NEXT_NODE_ADDR = 'fdca:ffee:8::1'
 SITE_LOCAL_PREFIX = 'fdca:ffee:8:0'
 HOST_ID = 1
+USE_CLIENT_TAP = False
+USE_NETNS = False
 
 class Node():
 
@@ -43,6 +45,7 @@ class Node():
         self.site_local_prefix = SITE_LOCAL_PREFIX
         self.next_node_addr = NEXT_NODE_ADDR
         self.domain_code = None
+        self.configured = False
 
     def add_mesh_link(self, peer, _is_peer=False, _port=None):
         self.if_index_max += 1
@@ -82,22 +85,36 @@ class Node():
 
     class ssh_conn:
 
-        def __init__(self, node, wait_before_connecting=False):
-            self.wait_before_connecting = wait_before_connecting
+        def __init__(self, node):
             self.node = node
 
         async def __aenter__(self):
-            # client iface link local addr
-            ifname = self.node.if_client
-            host_id = HOST_ID
-            lladdr = "fe80::5054:%02xff:fe%02x:34%02x" % (host_id, self.node.id, 2)
-            addr = lladdr + '%' + ifname
+            if USE_CLIENT_TAP:
+                # client iface link local addr
+                ifname = self.node.if_client
+                host_id = HOST_ID
+                lladdr = "fe80::5054:%02xff:fe%02x:34%02x" % (host_id, self.node.id, 2)
+                addr = lladdr + '%' + ifname
+                port = 22
+            else:
+                addr = '127.0.0.1'
+                port = 22000 + self.node.id
+                if self.node.configured:
+                    port += 100
 
-            if self.wait_before_connecting:
-                # wait for ssh TODO: hacky
-                await wait_bash_cmd('while ! nc ' + addr + ' 22 -w 1 > /dev/null; do sleep 1; done;')
+            conn = lambda: asyncssh.connect(addr, username='root', port=port, known_hosts=None, client_keys=[SSH_KEY_FILE])
 
-            self.conn = await asyncssh.connect(addr, username='root', known_hosts=None, client_keys=[SSH_KEY_FILE])
+            # 100 retries
+            for i in range(100):
+                try:
+                    self.conn = await conn()
+                    return self.conn
+                except ConnectionResetError:
+                    await asyncio.sleep(1)
+                except OSError:
+                    await asyncio.sleep(1)
+
+            self.conn = await conn()
             return self.conn
 
         async def __aexit__(self, type, value, traceback):
@@ -179,13 +196,23 @@ def gen_qemu_call(image, node):
 
         mesh_id += 1
 
+    ssh_port = 22000 + node.id
+    ssh_port_configured = 22100 + node.id
+
+    wan_netdev = 'user,id=hn1,hostfwd=tcp::' + str(ssh_port_configured) + '-10.0.2.15:22'
+
+    if USE_CLIENT_TAP:
+        client_netdev = 'tap,id=hn2,script=no,downscript=no,ifname=%s' % node.if_client
+    else:
+        client_netdev = 'user,id=hn2,hostfwd=tcp::' + str(ssh_port) + '-192.168.1.1:22,net=192.168.1.15/24'
+
     call = ['-nographic',
             '-enable-kvm',
 #            '-no-hpet',
 #            '-cpu', 'host',
-            '-netdev', 'user,id=hn1',
+            '-netdev', wan_netdev,
             '-device', eth_driver + ',addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
-            '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s' % node.if_client,
+            '-netdev', client_netdev,
             '-device', eth_driver + ',addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
     # '-d', 'guest_errors', '-d', 'cpu_reset', '-gdb', 'tcp::' + str(3000 + node.id),
@@ -232,13 +259,12 @@ def wait_bash_cmd(cmd):
     # Wait for the subprocess exit
     yield from proc.wait()
 
-async def install_client(initial_time, node):
-    clientname = "client" + str(node.id)
-    dbg = debug_print(initial_time, clientname)
-
+async def configure_client_if(node):
+    dbg = debug_print(initial_time, node.hostname)
     ifname = node.if_client
 
     dbg('waiting for iface ' + ifname + ' to appear')
+
     await wait_bash_cmd('while ! ip link show dev ' + ifname + ' &>/dev/null; do sleep 1; done;')
 
     host_id = HOST_ID
@@ -246,43 +272,61 @@ async def install_client(initial_time, node):
     client_iface_mac = "aa:54:%02x:%02x:34:%02x" % (host_id, node.id, 2)
     run('ip link set ' + ifname + ' address ' + client_iface_mac)
     run('ip link set ' + ifname + ' up')
-    #await wait_bash_cmd('while ! ping -c 1 ' + addr + ' &>/dev/null; do sleep 1; done;')
+    # await wait_bash_cmd('while ! ping -c 1 ' + addr + ' &>/dev/null; do sleep 1; done;')
     dbg('iface ' + ifname + ' appeared')
 
-    # node setup setup needs to be done here
-    #addr = socket.getaddrinfo(f'{lladdr}%{ifname}', 22, socket.AF_INET6, socket.SOCK_STREAM)[0]
-    async with Node.ssh_conn(node, wait_before_connecting=True) as conn:
-        await config_node(initial_time, node, conn)
-    dbg(node.hostname + ' configured')
-
+def configure_netns(node):
+    dbg = debug_print(initial_time, node.hostname)
     # create netns
     netns = "%s_client" % node.hostname
+    ifname = node.if_client
     # TODO: delete them correctly
     # Issue with mountpoints yet http://man7.org/linux/man-pages/man7/mount_namespaces.7.html
     use_netns = False
-    if use_netns:
-        run('ip netns add ' + netns)
-        gen_etc_hosts_for_netns(netns)
 
-        # move iface to netns
-        dbg('moving ' + ifname + ' to netns ' + netns)
-        run('ip link set netns ' + netns + ' dev ' + ifname)
-        run_in_netns(netns, 'ip link set lo up')
-        run_in_netns(netns, 'ip link set ' + ifname + ' up')
-        run_in_netns(netns, 'ip link delete br_' + ifname + ' type bridge 2> /dev/null || true') # force deletion
-        run_in_netns(netns, 'ip link add name br_' + ifname + ' type bridge')
-        run_in_netns(netns, 'ip link set ' + ifname + ' master br_' + ifname)
-        run_in_netns(netns, 'ip link set br_' + ifname + ' up')
+    run('ip netns add ' + netns)
+    gen_etc_hosts_for_netns(netns)
 
-        # spawn client shell
-        shell = os.environ.get('SHELL') or '/bin/bash'
-        spawn_in_tmux(clientname, 'ip netns exec ' + netns + ' ' + shell)
+    # move iface to netns
+    dbg('moving ' + ifname + ' to netns ' + netns)
+    run('ip link set netns ' + netns + ' dev ' + ifname)
+    run_in_netns(netns, 'ip link set lo up')
+    run_in_netns(netns, 'ip link set ' + ifname + ' up')
+    run_in_netns(netns, 'ip link delete br_' + ifname + ' type bridge 2> /dev/null || true')  # force deletion
+    run_in_netns(netns, 'ip link add name br_' + ifname + ' type bridge')
+    run_in_netns(netns, 'ip link set ' + ifname + ' master br_' + ifname)
+    run_in_netns(netns, 'ip link set br_' + ifname + ' up')
 
-        # spawn ssh shell
-        ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
-                   '-o StrictHostKeyChecking=no ' + \
-                   '-i ' + SSH_KEY_FILE + ' '
-        spawn_in_tmux(node.hostname, 'ip netns exec ' + netns + ' /bin/bash -c "while ! ssh ' + ssh_opts + ' root@' + node.next_node_addr + '; do sleep 1; done"')
+async def configure_node(initial_time, node):
+    dbg = debug_print(initial_time, node.hostname)
+
+    if USE_CLIENT_TAP:
+        await configure_client_if(node)
+
+    dbg('configuring node')
+
+    async with Node.ssh_conn(node) as conn:
+        await config_node(initial_time, node, conn)
+
+    dbg(node.hostname + ' configured')
+    node.configured = True
+
+    if USE_CLIENT_TAP and USE_NETNS:
+        configure_netns(node)
+
+async def install_client(initial_time, node):
+    clientname = "client" + str(node.id)
+    dbg = debug_print(initial_time, clientname)
+
+    # spawn client shell
+    shell = os.environ.get('SHELL') or '/bin/bash'
+    spawn_in_tmux(clientname, 'ip netns exec ' + netns + ' ' + shell)
+
+    # spawn ssh shell
+    ssh_opts = '-o UserKnownHostsFile=/dev/null ' + \
+               '-o StrictHostKeyChecking=no ' + \
+               '-i ' + SSH_KEY_FILE + ' '
+    spawn_in_tmux(node.hostname, 'ip netns exec ' + netns + ' /bin/bash -c "while ! ssh ' + ssh_opts + ' root@' + node.next_node_addr + '; do sleep 1; done"')
 
 def spawn_in_tmux(title, cmd):
     run('tmux -S test new-window -d -n ' + title + ' ' + cmd)
@@ -413,7 +457,7 @@ def configure_all():
     for node in Node.all_nodes:
         loop.create_task(gen_qemu_call(image, node))
         loop.create_task(read_to_buffer(node))
-        config_tasks += [loop.create_task(install_client(initial_time, node))]
+        config_tasks += [loop.create_task(configure_node(initial_time, node))]
 
     configured = True
 
