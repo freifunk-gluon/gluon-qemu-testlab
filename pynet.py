@@ -444,7 +444,7 @@ def start():
     global args
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-forever", help="", action="store_true")
-    parser.add_argument("--run-tests-on-existing-instane", help="", action="store_true")
+    parser.add_argument("--run-tests-on-existing-instance", help="", action="store_true")
     args = parser.parse_args()
 
     #if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
