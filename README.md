@@ -61,14 +61,15 @@ start()
 finish()
 ```
 
-### API
+### Testing API
 
 ``` python
 ssh(n, c)                   # enqueues a command c on node n, but does not yet run them
 expect_success(ssh(n, c))   # enqueues similar to to ssh(n, c), but the test will fail, if
                             # this command does not return sucessfully
 exit_with_others(ssh(n, c)) # enqueues a command, but sync() will not wait for this command
-                            # to exit, but will interrupt it via SIGINT (CTRL+C)                          
+                            # to exit, but will interrupt it via SIGINT (CTRL+C). This is
+                            # helpful for server commands which would run forever.
 
 sync()                      # runs all enqueued commands simultaneously till they end
 check(ssh(n, c))            # the command c is started directly on node n and check() will only return after it is finished.
@@ -77,15 +78,14 @@ check(ssh(n, c))            # the command c is started directly on node n and ch
 
 ### CLI
 
-```
-lemoer@orange ~/d/f/g/pynet> python3.6 scenarios/pair.py -h
-usage: pair.py [-h] [--run-forever] [--run-tests-on-existing-instane]
+This CLI options currently exist:
+- `--run-forever`
+- `--run-tests-on-existing-instance`
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --run-forever
-  --run-tests-on-existing-instance
-```
+Because starting up the qemu instances takes some time, the iteration process during test development can become
+tedious. The `--run-tests-on-existing-instance` switch is especially helpful here. You can start one instance of pynet
+using the `--run-forever` switch and then invoke scenarios using the `--run-tests-on-existing-instance` switch. This 
+new pynet instances will not run their own qemus instances but reuse the already spawned ones. 
 
 ## Advanced gimmics
 
