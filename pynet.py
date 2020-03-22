@@ -6,9 +6,11 @@ import time
 import shutil
 import asyncio
 import socket
+import argparse
 import asyncssh
 import subprocess
 from operator import itemgetter
+
 
 #import logging
 #
@@ -432,21 +434,34 @@ configured = False
 global loop
 loop = None
 config_tasks = []
+args = None
 
-def configure_all():
+def start():
     global configured
     if configured:
         return
 
-    if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
-        os.execl('/usr/bin/tmux', 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
+    global args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run-forever", help="", action="store_true")
+    parser.add_argument("--run-tests-on-existing-instane", help="", action="store_true")
+    args = parser.parse_args()
 
-    # TODO: cd to project folder
+    #if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
+    #    os.execl('/usr/bin/tmux', 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
+
     if not os.path.exists(SSH_PUBKEY_FILE):
         run('ssh-keygen -t rsa -f ' + SSH_KEY_FILE + ' -N \'\'')
 
     global loop
     loop = asyncio.get_event_loop()
+
+    if args.run_tests_on_existing_instance:
+        # We expect the nodes to be already configured.
+        for node in Node.all_nodes:
+            node.configured = True
+
+        return loop
 
     host_id = HOST_ID
     global host_entries
@@ -475,13 +490,22 @@ def configure_all():
     print('loop inside', loop)
     return loop
 
+def finish():
+    if args.run_tests_on_existing_instance:
+        return
+
+    if args.run_forever:
+        try:
+            print('Running forever. Well, at least till CTRL + C is pressed.')
+            loop.run_forever()
+        except KeyboardInterrupt:
+            print('Exiting now. Closing qemus.')
+
+    close_qemus()
+
 def close_qemus():
     for p in processes.values():
         p.terminate()
-
-def run_forever():
-    configure_all()
-    loop.run_forever()
 
 def connect(a, b):
     a.add_mesh_link(b)

@@ -10,9 +10,7 @@ b = Node()
 
 connect(a, b)
 
-configure_all()                                # This command boots the qemu instances
-#new_loop()                                    # This command can be used when the qemu instances are
-                                               # already running.
+start()                                        # This command boots the qemu instances
 
 # API Description:
 #
@@ -47,4 +45,4 @@ expect_success(ssh(a, 'iperf3 -V -c node2'))   # if this command does not return
 sync(retries=10)                               # the tests are performed with 10 retries, because
                                                # initially network might not be set up correctly
 
-close_qemus()
+finish()
