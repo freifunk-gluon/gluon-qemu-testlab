@@ -524,5 +524,16 @@ def sync(retries=1, sleep=5):
         time.sleep(sleep)
         print('retrying now.')
 
+def check(p):
+    global ssh_processes
+    expect_success(p)
+    success = _sync()
+    ssh_processes = {}
+    return success
+
+def new_loop():
+    global loop
+    loop = asyncio.get_event_loop()
+
 
 initial_time = time.time()

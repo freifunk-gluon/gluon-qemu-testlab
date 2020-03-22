@@ -11,11 +11,15 @@ b = Node()
 connect(a, b)
 
 configure_all()                                # This command boots the qemu instances
+#new_loop()                                    # This command can be used when the qemu instances are
+                                               # already running.
 
 # API Description:
 #
-# ssh(n, c) - enqueues a command c on node n, but does not yet run them
-# sync()    - runs all enqueued commands simultaneously till they end
+# ssh(n, c)        - enqueues a command c on node n, but does not yet run them
+# sync()           - runs all enqueued commands simultaneously till they end
+# check(ssh(n, c)) - the command c is started directly on node n and check() will only return after it is finished.
+#                    check() returns True, if the return code was successful.
 
 rule = """
 config rule 'iperf3'                          
@@ -26,8 +30,9 @@ config rule 'iperf3'
         option proto 'tcp'
 """
 
-ssh_singlecmd(b, 'grep iperf3 /etc/config/firewall >/dev/null || cat >> /etc/config/firewall <<EOF \n' + rule)
-ssh_singlecmd(b, 'grep iperf3 /etc/config/firewall >/dev/null || /etc/init.d/firewall restart')
+if not check(ssh(b, 'grep iperf3 /etc/config/firewall >/dev/null')):
+    ssh_singlecmd(b, 'cat >> /etc/config/firewall <<EOF \n' + rule)
+    ssh_singlecmd(b, '/etc/init.d/firewall restart')
 
 ssh(b, 'ubus wait_for network.interface.bat0')
 ssh(a, 'ubus wait_for network.interface.bat0')
