@@ -28,4 +28,6 @@ b = Node()
 connect(b, n5)
 connect(b, n8)
 
-run_all()
+start()
+finish()
+

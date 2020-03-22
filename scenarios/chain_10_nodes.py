@@ -9,4 +9,5 @@ for i in range(9):
     connect(a, b)
     a = b
 
-run_all()
+start()
+finish()

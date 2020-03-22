@@ -16,4 +16,6 @@ for i in range(NODE_COUNT):
 
     nodes.append(n)
 
-run_all()
+start()
+finish()
+

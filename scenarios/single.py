@@ -5,4 +5,6 @@ from pynet import *
 
 a = Node()
 
-run_all()
+start()
+finish()
+
