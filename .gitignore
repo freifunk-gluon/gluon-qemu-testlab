@@ -7,3 +7,5 @@ ptys/*
 !ptys/.keep
 __pycache__
 secret/noise*
+dist
+build
