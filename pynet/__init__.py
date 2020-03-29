@@ -112,6 +112,8 @@ class Node():
                 try:
                     self.conn = await conn()
                     return self.conn
+                except asyncssh.misc.ConnectionLost:
+                    await asyncio.sleep(1)
                 except ConnectionResetError:
                     await asyncio.sleep(1)
                 except OSError:
@@ -547,6 +549,23 @@ def _sync():
 
     for proc in ssh_processes.values():
         proc['task'] = loop.create_task(_ssh(proc))
+
+    # we wait here until at least all ssh processes are started
+    for proc in ssh_processes.values():
+        retries = 100
+        while True:
+            if proc['process'] is None:
+                # this happens if c.create_process() has not yet been awaited
+                print('The process "' + proc['cmd'] + '" has not started yet. ' + str(retries) + ' retries left.')
+                t = loop.create_task(asyncio.sleep(1))
+                loop.run_until_complete(t)
+
+                if retries < 1:
+                    exit(1)
+
+                retries -= 1
+            else:
+                break
 
     for proc in ssh_processes.values():
         if proc['exit_with_others']:
