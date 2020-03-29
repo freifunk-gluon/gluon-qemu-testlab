@@ -11,7 +11,7 @@ calling the `connect()` function. Then pynet does the rest:
 2. It connects nodes together as expected using qemus network capabilities.
 3. It configures the node though the *config mode* of gluon using an ssh session.
 4. For each node, it also simulates a client device by using the linux network namespaces technology.
-5. To manage all the shell accesses to the different nodes and clients, pynet uses a tmux session and gives therefore access to all nodes and simulated clients.
+5. Shell accesses to the different nodes and clients is provided.
 
 Sadly, the tool needs root access on your device, since
 managing linux network namespaces and network interfaces
@@ -24,7 +24,6 @@ is nearly impossible without root access.
 - Linux OS
 - At least python3.6
 - qemu
-- tmux
 - python lib asyncssh
 
 ``` shell
