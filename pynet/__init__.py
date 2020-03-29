@@ -226,7 +226,7 @@ async def gen_qemu_call(image, node):
 
     master, slave = os.openpty()
     pty_path = './ptys/node%d' % node.id;
-    if os.path.exists(pty_path):
+    if os.path.islink(pty_path):
         os.remove(pty_path)
     os.symlink(os.ttyname(slave), pty_path)
     process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=master)
