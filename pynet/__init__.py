@@ -191,7 +191,7 @@ async def gen_qemu_call(image, node):
             raise ValueError('conn_type invalid: ' + str(conn_type))
 
         if conn_type == 'connect':
-            yield from wait_bash_cmd('while ! ss -tlp4n | grep ":' + str(port) + '" &>/dev/null; do sleep 1; done;')
+            await wait_bash_cmd('while ! ss -tlp4n | grep ":' + str(port) + '" &>/dev/null; do sleep 1; done;')
 
         mesh_ifaces += [
             '-device', (eth_driver + ',addr=0x%02x,netdev=mynet%d,id=m_nic%d,mac=' + \
