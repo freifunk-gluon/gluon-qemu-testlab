@@ -3,6 +3,7 @@
 import os
 import sys
 import time
+import atexit
 import shutil
 import asyncio
 import socket
@@ -164,8 +165,7 @@ stdout_buffers = {}
 processes = {}
 masters = {}
 
-@asyncio.coroutine
-def gen_qemu_call(image, node):
+async def gen_qemu_call(image, node):
 
     shutil.copyfile('./' + image, './images/%02x.img' % node.id)
 
@@ -223,14 +223,16 @@ def gen_qemu_call(image, node):
             '-drive', 'format=raw,file=./images/%02x.img' % node.id] + call + mesh_ifaces
 
     master, slave = os.openpty()
-    pty_path = fifo_path = './ptys/%02x' % node.id;
+    pty_path = './ptys/node%d' % node.id;
     if os.path.exists(pty_path):
         os.remove(pty_path)
     os.symlink(os.ttyname(slave), pty_path)
     process = asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stdin=master)
     masters[node.id] = master
 
-    processes[node.id] = yield from process
+    p = await process
+    atexit.register(p.terminate)
+    processes[node.id] = p
 
 async def ssh_call(p, cmd):
     res = await p.run(cmd)
@@ -487,7 +489,6 @@ def start():
     for config_task in config_tasks:
         loop.run_until_complete(config_task)
 
-    print('loop inside', loop)
     return loop
 
 def finish():
@@ -500,12 +501,6 @@ def finish():
             loop.run_forever()
         except KeyboardInterrupt:
             print('Exiting now. Closing qemus.')
-
-    close_qemus()
-
-def close_qemus():
-    for p in processes.values():
-        p.terminate()
 
 def connect(a, b):
     a.add_mesh_link(b)
@@ -592,7 +587,6 @@ def sync(retries=1, sleep=5):
         retries -= 1
 
         if retries < 1:
-            close_qemus()
             print('TESTS FAILED!')
             exit(1)
 
