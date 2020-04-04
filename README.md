@@ -84,6 +84,18 @@ tedious. The `--run-tests-on-existing-instance` switch is especially helpful her
 using the `--run-forever` switch and then invoke scenarios using the `--run-tests-on-existing-instance` switch. This 
 new pynet instances will not run their own qemus instances but reuse the already spawned ones. 
 
+### SSH Access
+
+During config mode, the ssh instances are available from the host machine at port `localhost:22001`, `localhost:22002`,
+and so on. When the instances are configured, they are available on ports `localhost:22101`, `localhost:22102`, and
+so on.
+
+When they are configured, you can use the symlinked scripts:
+- `ssh/node1.sh`
+- `ssh/node2.sh`
+- ...
+to easily access the nodes. They provide a little more convinience as they disable known hosts checks.
+
 ## Advanced gimmics
 
 - Nodes support resolving names of each other. ```ping node1```
