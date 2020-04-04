@@ -5,13 +5,13 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="gluon-qemu-testlab",
-    version="0.0.2",
+    version="0.0.4",
     author="Leonardo Mörlein",
     author_email="me@irrelefant.net",
     description="Python scripts to run qemu and gluon based virtual mesh networks",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/lemoer/gluon-qemu-testlab",
+    url="https://github.com/freifunk-gluon/gluon-qemu-testlab",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
