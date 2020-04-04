@@ -94,6 +94,7 @@ When they are configured, you can use the symlinked scripts:
 - `ssh/node1.sh`
 - `ssh/node2.sh`
 - ...
+
 to easily access the nodes. They provide a little more convinience as they disable known hosts checks.
 
 ## Advanced gimmics
