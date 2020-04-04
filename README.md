@@ -1,11 +1,13 @@
-# pynet
+# gluon-qemu-testlab
 
-The *pynet* tools helps in creating virtual mesh topologies
+The *gluon-qemu-testlab* (formerly known as *pynet*) tool helps
+in creating virtual mesh topologies
 with gluon firmwares using the qemu virtualization
 technology. It provides a simple language, where you can
 build your topology file in. You can create nodes by
 simply calling a function `Node()` and connect them by
-calling the `connect()` function. Then pynet does the rest:
+calling the `connect()` function. Then gluon-qemu-testlab
+does the rest:
 
 1. It starts a qemu instance for each node by using the `image.img` firmware image from the root of the project directory.
 2. It connects nodes together as expected using qemus network capabilities.
