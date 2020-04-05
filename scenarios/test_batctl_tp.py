@@ -25,7 +25,7 @@ WARNING: THIS TEST IS CURRENTLY BROKEN, AS THE BATCTL TPMETER ALWAYS RETURNS TRU
 
 addr = stdout(ssh(a, 'cat /sys/class/net/primary0/address')).strip()
 
-ssh(b, 'batctl tp ' + addr)
+expect_success(ssh(b, f'batctl tp {addr}'))
 sync(retries=10)                               # the tests are performed with 10 retries, because
                                                # initially network might not be set up correctly
 
