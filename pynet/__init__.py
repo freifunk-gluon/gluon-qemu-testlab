@@ -630,6 +630,9 @@ def stdout(p):
     global ssh_processes
     expect_success(p)
     success = _sync()
+    if not success:
+        print('command "' + p['process'].command + '" exited with status code ' + str(p['process'].exit_status))
+        exit(1)
     ssh_processes = {}
     return p['stdout']
 
