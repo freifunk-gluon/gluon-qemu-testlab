@@ -583,9 +583,15 @@ def _sync():
         else:
             print('command "' + p.command + '" exited with status code ' + str(p.exit_status))
             print('stdout:')
-            print(t.result().stdout)
+            stdout = t.result().stdout
+            print(stdout)
             print('stderr:')
-            print(t.result().stderr)
+            stderr = t.result().stderr
+            print(stderr)
+
+            proc['stdout'] = stdout
+            proc['stderr'] = stderr
+
 
     success = True
     for proc in ssh_processes.values():
@@ -619,6 +625,13 @@ def check(p):
     success = _sync()
     ssh_processes = {}
     return success
+
+def stdout(p):
+    global ssh_processes
+    expect_success(p)
+    success = _sync()
+    ssh_processes = {}
+    return p['stdout']
 
 def new_loop():
     global loop
