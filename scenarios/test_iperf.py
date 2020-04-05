@@ -12,12 +12,13 @@ connect(a, b)
 
 start()                                        # This command boots the qemu instances
 
-# API Description:
-#
-# ssh(n, c)        - enqueues a command c on node n, but does not yet run them
-# sync()           - runs all enqueued commands simultaneously till they end
-# check(ssh(n, c)) - the command c is started directly on node n and check() will only return after it is finished.
-#                    check() returns True, if the return code was successful.
+def ensure_iperf3(node):
+    if not check(ssh(node, 'test -f /usr/bin/iperf3')):
+        expect_success(ssh(node, 'gluon-wan opkg update && gluon-wan opkg install iperf3'))
+
+ensure_iperf3(a)
+ensure_iperf3(b)
+sync()
 
 rule = """
 config rule 'iperf3'                          
