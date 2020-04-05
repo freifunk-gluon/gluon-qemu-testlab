@@ -13,11 +13,11 @@ connect(a, b)
 
 start()                                        # This command boots the qemu instances
 
-ssh(b, "ping -c 5 node1")
+expect_success(ssh(b, "ping -c 5 node1"))
 sync(retries=10)
 
 def neighbourinfo(req):
-    res = stdout(ssh(b, "gluon-neighbour-info -d ff02::2:1001 -p 1001 -r " + req + " -i eth2 -c 2"))
+    res = stdout(ssh(b, f"gluon-neighbour-info -d ff02::2:1001 -p 1001 -r {req} -i eth2 -c 2"))
     ret = []
     for line in res.split('\n'):
         if line == '':
