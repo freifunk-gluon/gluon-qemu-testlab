@@ -9,6 +9,7 @@ import asyncio
 import socket
 import argparse
 import asyncssh
+import ipaddress
 import subprocess
 from operator import itemgetter
 
@@ -24,8 +25,6 @@ from operator import itemgetter
 image = "image.img"
 SSH_KEY_FILE = './ssh/id_rsa.key'
 SSH_PUBKEY_FILE = SSH_KEY_FILE + '.pub'
-NEXT_NODE_ADDR = 'fdca:ffee:8::1'
-SITE_LOCAL_PREFIX = 'fdca:ffee:8:0'
 HOST_ID = 1
 USE_CLIENT_TAP = False
 USE_NETNS = False
@@ -45,10 +44,9 @@ class Node():
         self.if_index_max = 1
         self.uci_sets = []
         self.uci_commits = []
-        self.site_local_prefix = SITE_LOCAL_PREFIX
-        self.next_node_addr = NEXT_NODE_ADDR
         self.domain_code = None
         self.configured = False
+        self.addresses = []
 
     def add_mesh_link(self, peer, _is_peer=False, _port=None):
         self.if_index_max += 1
@@ -319,6 +317,16 @@ async def configure_node(initial_time, node):
     dbg(node.hostname + ' configured')
     node.configured = True
 
+    # wait till all nodes are configured
+    for n in Node.all_nodes:
+        while not n.configured:
+            await asyncio.sleep(1)
+
+    # add /etc/hosts entries
+    async with Node.ssh_conn(node) as conn:
+        await add_hosts(conn)
+        dbg('/etc/hosts is now adjusted')
+
     if USE_CLIENT_TAP and USE_NETNS:
         configure_netns(node)
 
@@ -370,6 +378,12 @@ def wait_for(node, b):
         yield from asyncio.sleep(0)
 
 async def add_hosts(p):
+    host_entries = ""
+
+    for n in Node.all_nodes:
+        for a in n.addresses:
+            host_entries += str(a) + " " + n.hostname + "\n"
+
     await ssh_call(p, 'cat >> /etc/hosts <<EOF\n' + host_entries + '\n')
     await ssh_call(p, 'cat >> /etc/bat-hosts <<EOF\n' + bathost_entries + '\n')
 
@@ -388,7 +402,6 @@ async def config_node(initial_time, node, ssh_conn):
     mesh_ifaces = list(map(itemgetter(0), node.mesh_links))
 
     await set_mesh_devs(p, mesh_ifaces)
-    await add_hosts(p)
     await ssh_call(p, 'pretty-hostname ' + node.hostname)
     await add_ssh_key(p)
 
@@ -400,6 +413,12 @@ async def config_node(initial_time, node, ssh_conn):
 
     if node.domain_code is not None:
         await ssh_call(p, "gluon-reconfigure")
+
+    prefix = (await ssh_call(p, 'gluon-show-site | jsonfilter -e @.prefix6')).strip()
+    prefix = ipaddress.ip_network(prefix)
+
+    mac = (await ssh_call(p, 'uci get network.client.macaddr')).strip()
+    node.addresses.append(mac_to_ip6(mac, prefix))
 
     # reboot to operational mode
     await ssh_call(p, 'uci set gluon-setup-mode.@setup_mode[0].configured=\'1\'')
@@ -440,6 +459,12 @@ loop = None
 config_tasks = []
 args = None
 
+def mac_to_ip6(mac, net):
+    mac = list(map(lambda x: int(x, 16), mac.split(':')))
+    x = list(next(net.hosts()).packed)
+    x[8:] = [mac[0] ^ 0x02] + mac[1:3] + [0xff, 0xfe] + mac[3:]
+    return ipaddress.ip_address(bytes(x))
+
 def start():
     global configured
     if configured:
@@ -473,11 +498,7 @@ def start():
     global config_tasks
 
     for node in Node.all_nodes:
-        host_entries += "{node.site_local_prefix}:5054:{host_id}ff:fe{node.id:02x}:3402 {node.hostname}\n".format(node=node, host_id=host_id)
-        client_name = node.hostname.replace('node', 'client')
-        host_entries += "{node.site_local_prefix}:a854:{host_id}ff:fe{node.id:02x}:3402 {client_name}\n".format(node=node, host_id=host_id, client_name=client_name)
         bathost_entries += "52:54:{host_id:02x}:{node.id:02x}:34:02 {node.hostname}\n".format(node=node, host_id=host_id)
-        bathost_entries += "aa:54:{host_id:02x}:{node.id:02x}:34:02 {client_name}\n".format(node=node, host_id=host_id, client_name=client_name)
 
     bathost_entries += "de:ad:be:ee:ff:01 mobile1\n"
 
