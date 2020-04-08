@@ -366,7 +366,12 @@ def read_to_buffer(node):
     process = processes[node.id]
     master = masters[node.id]
     stdout_buffers[node.id] = b""
-    with open('logs/' + node.hostname + '.log', 'wb') as f1:
+
+    logdir = os.path.join(workdir, 'logs')
+    if not os.path.exists(logdir):
+        os.mkdir(logdir)
+
+    with open(os.path.join(logdir, node.hostname + '.log'), 'wb') as f1:
         while True:
             b = yield from process.stdout.read(1) # TODO: is this unbuffered?
             stdout_buffers[node.id] += b
