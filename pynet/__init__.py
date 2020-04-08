@@ -23,7 +23,7 @@ from operator import itemgetter
 #)
 
 image = "image.img"
-SSH_KEY_FILE = './ssh/id_rsa.key'
+SSH_KEY_FILE = 'id_rsa.key'
 SSH_PUBKEY_FILE = SSH_KEY_FILE + '.pub'
 HOST_ID = 1
 USE_CLIENT_TAP = False
@@ -103,7 +103,8 @@ class Node():
                 if self.node.configured:
                     port += 100
 
-            conn = lambda: asyncssh.connect(addr, username='root', port=port, known_hosts=None, client_keys=[SSH_KEY_FILE])
+            keyfile = os.path.join(workdir, 'ssh', SSH_KEY_FILE)
+            conn = lambda: asyncssh.connect(addr, username='root', port=port, known_hosts=None, client_keys=[keyfile])
 
             # 100 retries
             for i in range(100):
@@ -164,10 +165,16 @@ def run_in_netns(netns, cmd):
 stdout_buffers = {}
 processes = {}
 masters = {}
+workdir = "./"
 
 async def gen_qemu_call(image, node):
 
-    shutil.copyfile('./' + image, './images/%02x.img' % node.id)
+    imgdir = os.path.join(workdir, 'images')
+    if not os.path.exists(imgdir):
+        os.mkdir(imgdir)
+
+    imgfile = os.path.join(imgdir, '%02x.img' % node.id)
+    shutil.copyfile('./' + image, imgfile)
 
     # TODO: machine identifier
     host_id = HOST_ID
@@ -207,6 +214,7 @@ async def gen_qemu_call(image, node):
     if USE_CLIENT_TAP:
         client_netdev = 'tap,id=hn2,script=no,downscript=no,ifname=%s' % node.if_client
     else:
+        # in config mode, the device is used for configuration with net 192.168.1.0/24
         client_netdev = 'user,id=hn2,hostfwd=tcp::' + str(ssh_port) + '-192.168.1.1:22,net=192.168.1.15/24'
 
     call = ['-nographic',
@@ -220,10 +228,13 @@ async def gen_qemu_call(image, node):
 
     # '-d', 'guest_errors', '-d', 'cpu_reset', '-gdb', 'tcp::' + str(3000 + node.id),
     args = ['qemu-system-x86_64',
-            '-drive', 'format=raw,file=./images/%02x.img' % node.id] + call + mesh_ifaces
+            '-drive', 'format=raw,file=' + imgfile] + call + mesh_ifaces
 
     master, slave = os.openpty()
-    pty_path = './ptys/node%d' % node.id;
+    ptydir = os.path.join(workdir, 'ptys')
+    if not os.path.exists(ptydir):
+        os.mkdir(ptydir)
+    pty_path = os.path.join(ptydir, 'node%d' % node.id)
     if os.path.islink(pty_path):
         os.remove(pty_path)
     os.symlink(os.ttyname(slave), pty_path)
@@ -252,8 +263,8 @@ async def set_mesh_devs(p, devs):
     await ssh_call(p, 'uci commit firewall')
 
 async def add_ssh_key(p):
-    # TODO: this removes baked in ssh keys :/
-    with open(SSH_PUBKEY_FILE) as f:
+    keyfile = os.path.join(workdir, 'ssh', SSH_PUBKEY_FILE)
+    with open(keyfile) as f:
         content = f.read()
         await ssh_call(p, 'cat >> /etc/dropbear/authorized_keys <<EOF\n' + content)
 
@@ -312,6 +323,7 @@ async def configure_node(initial_time, node):
     dbg('configuring node')
 
     async with Node.ssh_conn(node) as conn:
+        dbg('connection established')
         await config_node(initial_time, node, conn)
 
     dbg(node.hostname + ' configured')
@@ -466,6 +478,7 @@ def mac_to_ip6(mac, net):
     return ipaddress.ip_address(bytes(x))
 
 def start():
+    global workdir
     global configured
     if configured:
         return
@@ -474,13 +487,24 @@ def start():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-forever", help="", action="store_true")
     parser.add_argument("--run-tests-on-existing-instance", help="", action="store_true")
+    parser.add_argument("--use-tmp-workdir", help="", action="store_true")
     args = parser.parse_args()
+
+    if args.use_tmp_workdir:
+        workdir = os.path.join('/tmp', 'gluon-qemu-testlab')
+
+        if not os.path.exists(workdir):
+            os.mkdir(workdir)
 
     #if os.environ.get('TMUX') is None and not 'notmux' in sys.argv:
     #    os.execl('/usr/bin/tmux', 'tmux', '-S', 'test', 'new', sys.executable, '-i', *sys.argv)
 
-    if not os.path.exists(SSH_PUBKEY_FILE):
-        run('ssh-keygen -t rsa -f ' + SSH_KEY_FILE + ' -N \'\'')
+    sshdir = os.path.join(workdir, 'ssh')
+    if not os.path.exists(sshdir):
+        os.mkdir(sshdir)
+
+    if not os.path.exists(os.path.join(sshdir, SSH_PUBKEY_FILE)):
+        run('ssh-keygen -t rsa -f ' + os.path.join(sshdir, SSH_KEY_FILE) + ' -N \'\'')
 
     global loop
     loop = asyncio.get_event_loop()
