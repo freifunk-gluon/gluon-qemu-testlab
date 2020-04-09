@@ -13,28 +13,21 @@ connect(a, b)
 
 start()                                        # This command boots the qemu instances
 
-expect_success(ssh(b, "ping -c 5 node1"))
-sync(retries=10)
+b.wait_until_succeeds("ping -c 5 node1")
 
 def neighbourinfo(req):
-    res = stdout(ssh(b, f"gluon-neighbour-info -d ff02::2:1001 -p 1001 -r {req} -i eth2 -c 2"))
-    ret = []
-    for line in res.split('\n'):
-        if not line:
-            continue
-
-        ret.append(json.loads(line))
+    res = b.wait_until_succeeds(f"gluon-neighbour-info -d ff02::2:1001 -p 1001 -r {req} -i eth2 -c 2")
+    # build json array line by line
+    ret = [json.loads(l) for l in res.split('\n')]
 
     print(req.upper() + ":")
     print(json.dumps(ret, indent=4))
     return ret
 
-neighbourinfo('nodeinfo')
-neighbourinfo('statistics')
 neighbours = neighbourinfo('neighbours')
 
-eth2_addr_a = stdout(ssh(a, "cat /sys/class/net/eth2/address")).strip()
-eth2_addr_b = stdout(ssh(b, "cat /sys/class/net/eth2/address")).strip()
+eth2_addr_a = a.succeed('cat /sys/class/net/eth2/address')
+eth2_addr_b = b.succeed('cat /sys/class/net/eth2/address')
 
 res0 = neighbours[0]['batadv']
 res1 = neighbours[1]['batadv']

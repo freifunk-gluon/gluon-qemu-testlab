@@ -29,6 +29,23 @@ HOST_ID = 1
 USE_CLIENT_TAP = False
 USE_NETNS = False
 
+
+# Special thanks to:
+#
+# https://github.com/NixOS/nixpkgs/blob/2577ec293255cbb995e42a86169cc40c427a6e7d/nixos/lib/test-driver/test-driver.py#L129-L140
+#
+def retry(fn) -> None:
+    """Call the given function repeatedly, with 1 second intervals,
+    until it returns True or a timeout is reached.
+    """
+    for _ in range(180):
+        if fn(False):
+            return
+        time.sleep(1)
+
+    if not fn(True):
+        raise Exception("action timed out")
+
 class Node():
 
     max_id = 0
@@ -97,18 +114,35 @@ class Node():
         return (res.exit_status, res.stdout.strip())
 
     def succeed(self, cmd):
-        exit_status, stdout = self.execute(cmd)
+        status, stdout = self.execute(cmd)
 
-        if exit_status != 0:
-            msg = f'Command "{cmd}" failed with exit status {exit_status}.'
+        if status != 0:
+            msg = f'Command "{cmd}" failed with exit status {status}.'
             self.dbg(msg)
             self.dbg('Stdout/stderr was:')
             for line in stdout.split('\n'):
                 self.dbg('| ' + line)
             raise Exception(msg)
         else:
-            self.dbg(f'Command "{cmd}" succeeded with exit status {exit_status}.')
+            self.dbg(f'Command "{cmd}" succeeded with exit status {status}.')
             return stdout
+
+    def wait_until_succeeds(self, cmd):
+        output = ""
+
+        def check_success(is_last_attempt) -> bool:
+            nonlocal output
+            if is_last_attempt:
+                output = self.succeed(cmd)
+                return True
+            else:
+                status, output = self.execute(cmd)
+                return status == 0
+
+        self.dbg(f'Waiting until "{cmd}" succeeds.')
+        retry(check_success)
+        self.dbg(f'"{cmd}" succeeded.')
+        return output
 
     class ssh_conn:
 
