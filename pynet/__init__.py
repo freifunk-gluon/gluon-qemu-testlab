@@ -47,6 +47,7 @@ class Node():
         self.domain_code = None
         self.configured = False
         self.addresses = []
+        self.dbg = debug_print(initial_time, self.hostname)
 
     def add_mesh_link(self, peer, _is_peer=False, _port=None):
         self.if_index_max += 1
@@ -83,6 +84,31 @@ class Node():
     @property
     def if_client(self):
         return "client" + str(self.id)
+
+    def execute(self, cmd):
+        async def _async_execute():
+            async with Node.ssh_conn(self) as conn:
+                res = await conn.create_process(cmd, stderr=asyncssh.STDOUT)
+                return await res.wait()
+        t = loop.create_task(_async_execute())
+        loop.run_until_complete(t)
+
+        res = t.result()
+        return (res.exit_status, res.stdout.strip())
+
+    def succeed(self, cmd):
+        exit_status, stdout = self.execute(cmd)
+
+        if exit_status != 0:
+            msg = f'Command "{cmd}" failed with exit status {exit_status}.'
+            self.dbg(msg)
+            self.dbg('Stdout/stderr was:')
+            for line in stdout.split('\n'):
+                self.dbg('| ' + line)
+            raise Exception(msg)
+        else:
+            self.dbg(f'Command "{cmd}" succeeded with exit status {exit_status}.')
+            return stdout
 
     class ssh_conn:
 

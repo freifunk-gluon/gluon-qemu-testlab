@@ -7,8 +7,8 @@ a = Node()
 
 start()
 
-ssh(a, "gluon-reconfigure")
-sync()
+stdout = a.succeed('gluon-reconfigure')
+print(stdout)
 
 finish()
 
