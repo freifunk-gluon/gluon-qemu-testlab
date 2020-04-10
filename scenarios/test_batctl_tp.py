@@ -12,13 +12,6 @@ connect(a, b)
 
 start()                                        # This command boots the qemu instances
 
-# API Description:
-#
-# ssh(n, c)        - enqueues a command c on node n, but does not yet run them
-# sync()           - runs all enqueued commands simultaneously till they end
-# check(ssh(n, c)) - the command c is started directly on node n and check() will only return after it is finished.
-#                    check() returns True, if the return code was successful.
-
 print("""
 WARNING: THIS TEST IS CURRENTLY BROKEN, AS THE BATCTL TPMETER ALWAYS RETURNS TRUE.
 """)
