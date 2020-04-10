@@ -60,17 +60,16 @@ finish()
 ### Testing API
 
 ``` python
-ssh(n, c)                      # enqueues a command c on node n, but does not yet run them
-expect_success(ssh(n, c))      # enqueues similar to to ssh(n, c), but the test will fail, if
-                               # this command does not return sucessfully
-exit_with_others(ssh(n, c))    # enqueues a command, but sync() will not wait for this command
-                               # to exit, but will interrupt it via SIGINT (CTRL+C). This is
-                               # helpful for server commands which would run forever.
+stdout = node.succeed("cmd")                   # execute cmd via ssh and exit with failure if the command returns
+                                               # with non-zero exit status
 
-sync()                         # runs all enqueued commands simultaneously till they end
-check(ssh(n, c))               # the command c is started directly on node n and check() will
-                               # only return after it is finished. check() returns True, if the
-                               # return code was successful.
+stdout = node.wait_until_succeeds("cmd")       # retry executing cmd via ssh until it suceeds or timeouts
+
+status, stdout = node.execute("cmd")           # execute command via ssh and return the status code in addition to
+                                               # stdout
+
+process = node.execute_in_background("cmd")    # start a command in background (e.g. a server process)
+process.close()                                # send SIGINT to the command and wait until it exits.
 ```
 
 ### CLI
