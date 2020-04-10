@@ -60,13 +60,13 @@ finish()
 ### Testing API
 
 ``` python
-stdout = node.succeed("cmd")                   # execute cmd via ssh and exit with failure if the command returns
-                                               # with non-zero exit status
+stdout = node.succeed("cmd")                   # execute cmd via ssh and exit with failure if the command
+                                               # returns with non-zero exit status
 
 stdout = node.wait_until_succeeds("cmd")       # retry executing cmd via ssh until it suceeds or timeouts
 
-status, stdout = node.execute("cmd")           # execute command via ssh and return the status code in addition to
-                                               # stdout
+status, stdout = node.execute("cmd")           # execute command via ssh and return the status code in
+                                               # addition to stdout
 
 process = node.execute_in_background("cmd")    # start a command in background (e.g. a server process)
 process.close()                                # send SIGINT to the command and wait until it exits.
