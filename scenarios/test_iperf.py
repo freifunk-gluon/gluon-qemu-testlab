@@ -13,37 +13,34 @@ connect(a, b)
 start()                                        # This command boots the qemu instances
 
 def ensure_iperf3(node):
-    if not check(ssh(node, 'test -f /usr/bin/iperf3')):
-        expect_success(ssh(node, 'gluon-wan opkg update && gluon-wan opkg install iperf3'))
+    status, _ = node.execute('test -f /usr/bin/iperf3')
+    if status != 0:
+        node.succeed('gluon-wan opkg update && gluon-wan opkg install iperf3')
 
 ensure_iperf3(a)
 ensure_iperf3(b)
-sync()
 
 rule = """
-config rule 'iperf3'                          
-        option dest_port '5201'               
-        option src 'mesh'                     
-        option name 'iperf3'                  
-        option target 'ACCEPT'                
+config rule 'iperf3'
+        option dest_port '5201'
+        option src 'mesh'
+        option name 'iperf3'
+        option target 'ACCEPT'
         option proto 'tcp'
 """
 
-if not check(ssh(b, 'grep iperf3 /etc/config/firewall >/dev/null')):
-    ssh_singlecmd(b, 'cat >> /etc/config/firewall <<EOF \n' + rule)
-    ssh_singlecmd(b, '/etc/init.d/firewall restart')
+status, _ = b.execute('grep iperf3 /etc/config/firewall > /dev/null')
+if status != 0:
+    b.succeed('cat >> /etc/config/firewall <<EOF \n' + rule)
+    b.succeed('/etc/init.d/firewall restart')
 
-ssh(b, 'ubus wait_for network.interface.bat0')
-ssh(a, 'ubus wait_for network.interface.bat0')
-sync()
+a.succeed('ubus wait_for network.interface.bat0')
+b.succeed('ubus wait_for network.interface.bat0')
 
-exit_with_others(ssh(b, 'iperf3 -V -s'))       # sync() will not wait for this cmd to exit, but
-                                               # will interrupt it via SIGINT
+iperf_server = b.execute_in_background('iperf3 -V -s')
 
-expect_success(ssh(a, 'iperf3 -V -c node2'))   # if this command does not return with status code
-                                               # equal to 0 the test will fail
-                                           
-sync(retries=10)                               # the tests are performed with 10 retries, because
-                                               # initially network might not be set up correctly
+a.wait_until_succeeds(f'iperf3 -V -c {b.hostname}')
+
+iperf_server.cancel()
 
 finish()

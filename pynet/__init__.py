@@ -102,12 +102,33 @@ class Node():
     def if_client(self):
         return "client" + str(self.id)
 
+    def execute_in_background(self, cmd, _msg=True):
+        class bg_cmd:
+            def __init__(self, node, cmd):
+                self.cmd = cmd
+                self.node = node
+                self.process = None
+
+                async def _async_execute():
+                    async with Node.ssh_conn(self.node) as conn:
+                        res = await conn.create_process(cmd, stderr=asyncssh.STDOUT)
+                        self.process = res
+                        return await res.wait()
+
+                self.task = loop.create_task(_async_execute())
+
+                if _msg:
+                    node.dbg(f'Command "{cmd}" started in background.')
+
+            def cancel(self):
+                self.process.send_signal('INT')
+                loop.run_until_complete(self.task)
+                self.node.dbg(f'Sent SIGINT to command "{self.cmd}".')
+
+        return bg_cmd(self, cmd)
+
     def execute(self, cmd):
-        async def _async_execute():
-            async with Node.ssh_conn(self) as conn:
-                res = await conn.create_process(cmd, stderr=asyncssh.STDOUT)
-                return await res.wait()
-        t = loop.create_task(_async_execute())
+        t = self.execute_in_background(cmd, _msg=False).task
         loop.run_until_complete(t)
 
         res = t.result()
@@ -117,14 +138,14 @@ class Node():
         status, stdout = self.execute(cmd)
 
         if status != 0:
-            msg = f'Command "{cmd}" failed with exit status {status}.'
+            msg = f'Expected success: command "{cmd}" failed with exit status {status}.'
             self.dbg(msg)
             self.dbg('Stdout/stderr was:')
             for line in stdout.split('\n'):
                 self.dbg('| ' + line)
             raise Exception(msg)
         else:
-            self.dbg(f'Command "{cmd}" succeeded with exit status {status}.')
+            self.dbg(f'Expected success: command "{cmd}" succeeded with exit status {status}.')
             return stdout
 
     def wait_until_succeeds(self, cmd):
