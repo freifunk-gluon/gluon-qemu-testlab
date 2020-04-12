@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="gluon-qemu-testlab",
-    version="0.0.4",
+    version="0.0.5",
     author="Leonardo Mörlein",
     author_email="me@irrelefant.net",
     description="Python scripts to run qemu and gluon based virtual mesh networks",
